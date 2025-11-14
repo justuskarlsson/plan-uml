@@ -1,0 +1,109 @@
+digraph ExtensionArchitecture {
+    rankdir=TB;
+    node [shape=box, style=rounded];
+    
+    // Entry Point
+    extension_ts [label="extension.ts\n(Activation)", fillcolor=lightblue, style="rounded,filled"];
+    
+    // Core Components
+    previewProvider [label="previewProvider.ts\n(Custom Editor Provider)", fillcolor="#E8F5E9", style="rounded,filled"];
+    graphvizRenderer [label="graphvizRenderer.ts\n(SVG Rendering)", fillcolor=lightyellow, style="rounded,filled"];
+    lineMapper [label="lineMapper.ts\n(Node-to-Line Mapping)", fillcolor=lightcoral, style="rounded,filled"];
+    
+    // MCP Server Components
+    mcpServer [label="mcpServer.ts\n(MCP Server)", fillcolor=lightpink, style="rounded,filled"];
+    mcpServerEntry [label="mcpServerEntry.ts\n(MCP Entry Point)", fillcolor=lightpink, style="rounded,filled"];
+    
+    // External Dependencies
+    vscodeAPI [label="VS Code API\n(Workspace, Commands)", shape=ellipse, fillcolor=lightgray, style="filled"];
+    graphvizDot [label="Graphviz dot\n(External Command)", shape=ellipse, fillcolor=lightgray, style="filled"];
+    webview [label="Webview Panel\n(HTML/SVG Display)", shape=ellipse, fillcolor=lightgray, style="filled"];
+    
+    // User Actions
+    userOpenFile [label="User Opens\n.dot/.gv File", shape=diamond, fillcolor=wheat, style="filled"];
+    userClickNode [label="User Clicks\nNode in Preview", shape=diamond, fillcolor=wheat, style="filled"];
+    userCommand [label="User Runs\nOpen Preview Command", shape=diamond, fillcolor=wheat, style="filled"];
+    
+    // Flow: Activation
+    extension_ts -> previewProvider [label="Registers"];
+    extension_ts -> userCommand [label="Registers Command"];
+    
+    // Flow: File Opening
+    userOpenFile -> previewProvider [label="Triggers"];
+    userCommand -> previewProvider [label="Triggers"];
+    
+    // Flow: Preview Rendering
+    previewProvider -> graphvizRenderer [label="renderFile()"];
+    previewProvider -> lineMapper [label="mapNodesToLines()"];
+    graphvizRenderer -> graphvizDot [label="exec('dot -Tsvg')"];
+    graphvizRenderer -> vscodeAPI [label="openTextDocument()"];
+    graphvizRenderer -> previewProvider [label="Returns SVG"];
+    lineMapper -> vscodeAPI [label="openTextDocument()"];
+    lineMapper -> previewProvider [label="Returns NodeMapping"];
+    
+    // Flow: Display
+    previewProvider -> webview [label="Updates HTML"];
+    webview -> previewProvider [label="PostMessage\n(selectLine)"];
+    
+    // Flow: Click Navigation
+    userClickNode -> webview [label="Click Event"];
+    webview -> previewProvider [label="selectLine Message"];
+    previewProvider -> vscodeAPI [label="showTextDocument()\nrevealRange()"];
+    
+    // Flow: Document Changes
+    vscodeAPI -> previewProvider [label="onDidChangeTextDocument"];
+    vscodeAPI -> previewProvider [label="onDidChange (FileSystem)"];
+    
+    // MCP Server Flow
+    mcpServerEntry -> mcpServer [label="startMcpServer()"];
+    mcpServer -> graphvizDot [label="renderGraphvizContent()"];
+    mcpServer -> lineMapper [label="mapNodesToLines()\n(standalone)"];
+    
+    // Key Functions
+    subgraph cluster_renderer {
+        label="GraphvizRenderer";
+        render_check [label="checkDotAvailable()", fillcolor=lightyellow, style="rounded,filled"];
+        render_to_svg [label="renderToSvg()", fillcolor=lightyellow, style="rounded,filled"];
+        render_file [label="renderFile()", fillcolor=lightyellow, style="rounded,filled"];
+        graphvizRenderer -> render_check;
+        graphvizRenderer -> render_to_svg;
+        graphvizRenderer -> render_file;
+    }
+    
+    subgraph cluster_mapper {
+        label="LineMapper";
+        map_nodes [label="mapNodesToLines()", fillcolor=lightcoral, style="rounded,filled"];
+        get_line [label="getNodeLine()", fillcolor=lightcoral, style="rounded,filled"];
+        extract_id [label="extractNodeIdFromSvgElement()", fillcolor=lightcoral, style="rounded,filled"];
+        lineMapper -> map_nodes;
+        lineMapper -> get_line;
+        lineMapper -> extract_id;
+    }
+    
+    subgraph cluster_preview {
+        label="GraphvizPreviewProvider";
+        resolve_editor [label="resolveCustomTextEditor()", fillcolor="#E8F5E9", style="rounded,filled"];
+        update_preview [label="updatePreview()", fillcolor="#E8F5E9", style="rounded,filled"];
+        get_content [label="getWebviewContent()", fillcolor="#E8F5E9", style="rounded,filled"];
+        enhance_svg [label="enhanceSvgWithNodeIds()", fillcolor="#E8F5E9", style="rounded,filled"];
+        previewProvider -> resolve_editor;
+        previewProvider -> update_preview;
+        previewProvider -> get_content;
+        previewProvider -> enhance_svg;
+    }
+    
+    subgraph cluster_mcp {
+        label="MCP Server Tools";
+        tool_render [label="render_graphviz", fillcolor=lightpink, style="rounded,filled"];
+        tool_get_line [label="get_node_line", fillcolor=lightpink, style="rounded,filled"];
+        tool_open [label="open_preview", fillcolor=lightpink, style="rounded,filled"];
+        mcpServer -> tool_render;
+        mcpServer -> tool_get_line;
+        mcpServer -> tool_open;
+    }
+    
+    // Styling
+    {rank=same; extension_ts; userOpenFile; userCommand}
+    {rank=same; previewProvider; graphvizRenderer; lineMapper}
+}
+
