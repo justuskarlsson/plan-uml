@@ -1,0 +1,122 @@
+@startuml ExtensionArchitecture
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+' --- Legend via stereotypes / colors ---
+skinparam component {
+  BackgroundColor<<Preview>> #E8F5E9
+  BackgroundColor<<Renderer>> #FFF9C4
+  BackgroundColor<<Mapper>> #FFCDD2
+  BackgroundColor<<MCP>> #F8BBD0
+}
+
+actor User
+
+package "VS Code Extension Host" {
+  [extension.ts\n(Activation)] <<Extension>>
+
+  [GraphvizPreviewProvider\npreviewProvider.ts] <<Preview>>
+  [GraphvizRenderer\ngraphvizRenderer.ts] <<Renderer>>
+  [LineMapper\nlineMapper.ts] <<Mapper>>
+
+  [MCP Server\nmcpServer.ts] <<MCP>>
+  [MCP Entry Point\nmcpServerEntry.ts] <<MCP>>
+
+  interface "VS Code API\n(Workspace, Commands)" as VSCodeAPI
+  interface "Webview Panel\n(HTML/SVG Display)" as Webview
+}
+
+package "External Processes" {
+  [Graphviz dot\n(External Command)] as DotProc
+}
+
+package "User Actions" {
+  usecase "Open .dot/.gv File" as UC_Open
+  usecase "Run Open Preview Command" as UC_Cmd
+  usecase "Click Node in Preview" as UC_Click
+}
+
+package "MCP Tools" {
+  [render_graphviz] <<MCP>>
+  [get_node_line] <<MCP>>
+  [open_preview] <<MCP>>
+}
+
+' --- Entry & commands ---
+User --> UC_Open
+User --> UC_Cmd
+User --> UC_Click
+
+UC_Open --> [extension.ts\n(Activation)]
+UC_Cmd  --> [extension.ts\n(Activation)]
+
+[extension.ts\n(Activation)] --> [GraphvizPreviewProvider\npreviewProvider.ts] : registerCustomEditor()
+[extension.ts\n(Activation)] --> VSCodeAPI : registerCommand()
+
+' --- Preview flows ---
+UC_Open --> [GraphvizPreviewProvider\npreviewProvider.ts] : open file
+UC_Cmd  --> [GraphvizPreviewProvider\npreviewProvider.ts] : open preview
+
+[GraphvizPreviewProvider\npreviewProvider.ts] --> [GraphvizRenderer\ngraphvizRenderer.ts] : renderFile()
+[GraphvizPreviewProvider\npreviewProvider.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()
+
+[GraphvizRenderer\ngraphvizRenderer.ts] --> DotProc : exec("dot -Tsvg")
+[GraphvizRenderer\ngraphvizRenderer.ts] --> VSCodeAPI : openTextDocument()
+[LineMapper\nlineMapper.ts] --> VSCodeAPI : openTextDocument()
+
+[GraphvizRenderer\ngraphvizRenderer.ts] --> [GraphvizPreviewProvider\npreviewProvider.ts] : SVG
+[LineMapper\nlineMapper.ts] --> [GraphvizPreviewProvider\npreviewProvider.ts] : NodeMapping
+
+[GraphvizPreviewProvider\npreviewProvider.ts] --> Webview : update HTML/SVG
+Webview --> [GraphvizPreviewProvider\npreviewProvider.ts] : postMessage(selectLine)
+
+UC_Click --> Webview : click node
+[GraphvizPreviewProvider\npreviewProvider.ts] --> VSCodeAPI : showTextDocument()\nrevealRange()
+
+VSCodeAPI --> [GraphvizPreviewProvider\npreviewProvider.ts] : onDidChangeTextDocument
+VSCodeAPI --> [GraphvizPreviewProvider\npreviewProvider.ts] : onDidChange (FS)
+
+' --- MCP server flow ---
+[MCP Entry Point\nmcpServerEntry.ts] --> [MCP Server\nmcpServer.ts] : startMcpServer()
+[MCP Server\nmcpServer.ts] --> DotProc : renderGraphvizContent()
+[MCP Server\nmcpServer.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()
+
+[MCP Server\nmcpServer.ts] --> [render_graphviz]
+[MCP Server\nmcpServer.ts] --> [get_node_line]
+[MCP Server\nmcpServer.ts] --> [open_preview]
+
+' --- Internal APIs (explicitly annotating key methods) ---
+rectangle "GraphvizRenderer API" #FFF9C4 {
+  () "checkDotAvailable()" as checkDot
+  () "renderToSvg()" as renderToSvg
+  () "renderFile()" as renderFile
+
+  [GraphvizRenderer\ngraphvizRenderer.ts] ..> checkDot
+  [GraphvizRenderer\ngraphvizRenderer.ts] ..> renderToSvg
+  [GraphvizRenderer\ngraphvizRenderer.ts] ..> renderFile
+}
+
+rectangle "LineMapper API" #FFCDD2 {
+  () "mapNodesToLines()" as mapNodes
+  () "getNodeLine()" as getLine
+  () "extractNodeIdFromSvgElement()" as extractId
+
+  [LineMapper\nlineMapper.ts] ..> mapNodes
+  [LineMapper\nlineMapper.ts] ..> getLine
+  [LineMapper\nlineMapper.ts] ..> extractId
+}
+
+rectangle "PreviewProvider API" #E8F5E9 {
+  () "resolveCustomTextEditor()" as resolveEditor
+  () "updatePreview()" as updatePreview
+  () "getWebviewContent()" as getContent
+  () "enhanceSvgWithNodeIds()" as enhanceSvg
+
+  [GraphvizPreviewProvider\npreviewProvider.ts] ..> resolveEditor
+  [GraphvizPreviewProvider\npreviewProvider.ts] ..> updatePreview
+  [GraphvizPreviewProvider\npreviewProvider.ts] ..> getContent
+  [GraphvizPreviewProvider\npreviewProvider.ts] ..> enhanceSvg
+}
+
+@enduml
