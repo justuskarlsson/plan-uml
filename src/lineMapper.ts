@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 
 export interface NodeMapping {
-    [nodeId: string]: number[]; // nodeId -> array of line numbers
+    [entityId: string]: number[]; // entityId -> array of line numbers
 }
 
 export interface EdgeMapping {
@@ -10,7 +10,7 @@ export interface EdgeMapping {
 
 export class LineMapper {
     /**
-     * Parse .dot file and map node IDs to line numbers
+     * Parse .puml file and map entity IDs and edges to line numbers
      */
     static async mapNodesToLines(uri: vscode.Uri): Promise<NodeMapping> {
         const document = await vscode.workspace.openTextDocument(uri);
@@ -19,59 +19,83 @@ export class LineMapper {
         
         const mapping: NodeMapping = {};
         
-        // Patterns to match:
-        // - node_id [attributes]
-        // - node_id -> target [attributes]
-        // - node_id -> target
-        // - "node_id" [attributes]
-        // - "node_id" -> target
-        
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i];
             const lineNum = i + 1;
+            const trimmedLine = line.trim();
             
             // Skip comments and empty lines
-            if (line.trim().startsWith('//') || line.trim().startsWith('/*') || line.trim() === '') {
+            if (trimmedLine.startsWith("'") || trimmedLine.startsWith('//') || trimmedLine.startsWith('/*') || trimmedLine === '') {
                 continue;
             }
-            
-            // Match node definitions: node_id [attributes] or "node_id" [attributes]
-            // This regex matches: optional quotes, node identifier, optional attributes
-            const nodePattern = /(?:^|\s)(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))(?:\s*\[[^\]]*\])?/g;
+
+            // Match entity definitions:
+            // - [Component] or [Component\nLabel]
+            // - actor User
+            // - package "Name" { ... }
+            // - class ClassName
+            // - interface InterfaceName
+            // - component ComponentName
+            // - node NodeName
+            // - database DatabaseName
+            // - queue QueueName
+            // - rectangle "Name"
+            // - etc.
+
+            // Pattern for [Component] or [Component\nLabel] or [Component as Alias]
+            const bracketEntityPattern = /\[([^\]]+?)(?:\s+as\s+(\w+))?\]/g;
             let match;
-            
-            while ((match = nodePattern.exec(line)) !== null) {
-                const nodeId = match[1] || match[2]; // Quoted or unquoted
-                if (nodeId) {
-                    if (!mapping[nodeId]) {
-                        mapping[nodeId] = [];
+            while ((match = bracketEntityPattern.exec(line)) !== null) {
+                const entityName = match[1].split('\\n')[0].trim(); // Get first part before \n
+                const alias = match[2];
+                
+                // Add both the entity name and alias if present
+                if (entityName) {
+                    if (!mapping[entityName]) {
+                        mapping[entityName] = [];
                     }
-                    if (!mapping[nodeId].includes(lineNum)) {
-                        mapping[nodeId].push(lineNum);
+                    if (!mapping[entityName].includes(lineNum)) {
+                        mapping[entityName].push(lineNum);
+                    }
+                }
+                
+                if (alias) {
+                    if (!mapping[alias]) {
+                        mapping[alias] = [];
+                    }
+                    if (!mapping[alias].includes(lineNum)) {
+                        mapping[alias].push(lineNum);
                     }
                 }
             }
-            
-            // Match edge definitions: node1 -> node2 or node1 -- node2
-            const edgePattern = /(?:^|\s)(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))(?:\s*(?:->|--)\s*)(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))/g;
-            let edgeMatch;
-            
-            while ((edgeMatch = edgePattern.exec(line)) !== null) {
-                const sourceId = edgeMatch[1] || edgeMatch[2];
-                const targetId = edgeMatch[3] || edgeMatch[4];
-                if (sourceId && targetId) {
-                    // Also map the nodes in edges
-                    if (!mapping[sourceId]) {
-                        mapping[sourceId] = [];
+
+            // Pattern for actor, package, class, interface, component, node, database, queue, etc.
+            // Format: keyword Name or keyword "Name"
+            const keywordEntityPattern = /^(actor|package|class|interface|component|node|database|queue|rectangle|usecase|agent|boundary|control|entity|collections|participant|actor|boundary|control|entity|collections)\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*)|([a-zA-Z_][a-zA-Z0-9_.]*))/i;
+            const keywordMatch = trimmedLine.match(keywordEntityPattern);
+            if (keywordMatch) {
+                const entityName = keywordMatch[2] || keywordMatch[3] || keywordMatch[4]; // Quoted or unquoted
+                if (entityName) {
+                    if (!mapping[entityName]) {
+                        mapping[entityName] = [];
                     }
-                    if (!mapping[targetId]) {
-                        mapping[targetId] = [];
+                    if (!mapping[entityName].includes(lineNum)) {
+                        mapping[entityName].push(lineNum);
                     }
-                    if (!mapping[sourceId].includes(lineNum)) {
-                        mapping[sourceId].push(lineNum);
+                }
+            }
+
+            // Pattern for package "Name" { (package with braces on same line)
+            const packagePattern = /package\s+(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_]*))\s*\{/i;
+            const packageMatch = trimmedLine.match(packagePattern);
+            if (packageMatch) {
+                const packageName = packageMatch[1] || packageMatch[2];
+                if (packageName) {
+                    if (!mapping[packageName]) {
+                        mapping[packageName] = [];
                     }
-                    if (!mapping[targetId].includes(lineNum)) {
-                        mapping[targetId].push(lineNum);
+                    if (!mapping[packageName].includes(lineNum)) {
+                        mapping[packageName].push(lineNum);
                     }
                 }
             }
@@ -81,11 +105,68 @@ export class LineMapper {
     }
 
     /**
-     * Find line number for a specific node ID
+     * Parse .puml file and map edges to line numbers
      */
-    static async getNodeLine(uri: vscode.Uri, nodeId: string): Promise<number | null> {
+    static async mapEdgesToLines(uri: vscode.Uri): Promise<EdgeMapping> {
+        const document = await vscode.workspace.openTextDocument(uri);
+        const text = document.getText();
+        const lines = text.split('\n');
+        
+        const mapping: EdgeMapping = {};
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const lineNum = i + 1;
+            const trimmedLine = line.trim();
+            
+            // Skip comments and empty lines
+            if (trimmedLine.startsWith("'") || trimmedLine.startsWith('//') || trimmedLine.startsWith('/*') || trimmedLine === '') {
+                continue;
+            }
+
+            // Match edge/relationship definitions:
+            // - A --> B
+            // - A -> B
+            // - A -- B
+            // - A - B
+            // - A -->> B (async)
+            // - A ..> B (dotted)
+            // - A <--> B (bidirectional)
+            // - "A" --> "B"
+            // - A -[#red]-> B (with styling)
+            // - User --> Component : label
+            // - A --> B : "label"
+            
+            // Pattern for edges: source --> target or source -> target, etc.
+            // This regex matches: optional quotes, identifier, arrow (various types), optional quotes, identifier
+            const edgePattern = /(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_.]*)|([a-zA-Z_][a-zA-Z0-9_]*))\s*(?:--?>>?|\.\.>|<-+>|->|--|\.\.|:)\s*(?:"([^"]+)"|([a-zA-Z_][a-zA-Z0-9_.]*)|([a-zA-Z_][a-zA-Z0-9_]*))/g;
+            let edgeMatch;
+            
+            while ((edgeMatch = edgePattern.exec(line)) !== null) {
+                const sourceId = edgeMatch[1] || edgeMatch[2] || edgeMatch[3];
+                const targetId = edgeMatch[4] || edgeMatch[5] || edgeMatch[6];
+                
+                if (sourceId && targetId) {
+                    const edgeKey = `${sourceId}->${targetId}`;
+                    if (!mapping[edgeKey]) {
+                        mapping[edgeKey] = [];
+                    }
+                    if (!mapping[edgeKey].includes(lineNum)) {
+                        mapping[edgeKey].push(lineNum);
+                    }
+                }
+            }
+        }
+        
+        return mapping;
+    }
+
+    /**
+     * Find line number for a specific entity ID
+     */
+    static async getEntityLine(uri: vscode.Uri, entityId: string): Promise<number | null> {
         const mapping = await this.mapNodesToLines(uri);
-        const lines = mapping[nodeId];
+        const lines = mapping[entityId];
         if (lines && lines.length > 0) {
             return lines[0]; // Return first occurrence
         }
@@ -93,34 +174,16 @@ export class LineMapper {
     }
 
     /**
-     * Extract node ID from SVG element
-     * Graphviz typically uses the node ID as the element ID or in the title
+     * Find line number for a specific edge
      */
-    static extractNodeIdFromSvgElement(element: Element): string | null {
-        // Try to get from element ID
-        const id = element.getAttribute('id');
-        if (id) {
-            // Graphviz often prefixes with "node" or "edge"
-            const match = id.match(/^(?:node|edge|cluster)_(.+)$/);
-            if (match) {
-                return match[1];
-            }
-            return id;
+    static async getEdgeLine(uri: vscode.Uri, sourceId: string, targetId: string): Promise<number | null> {
+        const mapping = await this.mapEdgesToLines(uri);
+        const edgeKey = `${sourceId}->${targetId}`;
+        const lines = mapping[edgeKey];
+        if (lines && lines.length > 0) {
+            return lines[0]; // Return first occurrence
         }
-        
-        // Try to get from title element (Graphviz often puts node ID in title)
-        const title = element.querySelector('title');
-        if (title && title.textContent) {
-            return title.textContent.trim();
-        }
-        
-        // Try to get from data attributes
-        const dataId = element.getAttribute('data-node-id');
-        if (dataId) {
-            return dataId;
-        }
-        
         return null;
     }
-}
 
+}

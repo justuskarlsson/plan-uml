@@ -1,7 +1,7 @@
 {
-  "name": "graphviz-preview",
-  "displayName": "Graphviz Preview",
-  "description": "Interactive preview for Graphviz (.dot) files with click-to-select navigation and MCP server support",
+  "name": "plantuml-preview",
+  "displayName": "PlantUML Preview",
+  "description": "Interactive preview for PlantUML (.puml) files with click-to-select navigation",
   "version": "0.0.1",
   "engines": {
     "vscode": "^1.74.0"
@@ -14,35 +14,31 @@
   "contributes": {
     "languages": [
       {
-        "id": "dot",
+        "id": "plantuml",
         "aliases": [
-          "Graphviz",
-          "dot"
+          "PlantUML",
+          "puml"
         ],
         "extensions": [
-          ".dot",
-          ".gv"
+          ".puml"
         ],
         "configuration": "./language-configuration.json"
       }
     ],
     "commands": [
       {
-        "command": "graphviz.openPreview",
-        "title": "Open Graphviz Preview",
-        "category": "Graphviz"
+        "command": "plantuml.openPreview",
+        "title": "Open PlantUML Preview",
+        "category": "PlantUML"
       }
     ],
     "customEditors": [
       {
-        "viewType": "graphviz.preview",
-        "displayName": "Graphviz Preview",
+        "viewType": "plantuml.preview",
+        "displayName": "PlantUML Preview",
         "selector": [
           {
-            "filenamePattern": "*.dot"
-          },
-          {
-            "filenamePattern": "*.gv"
+            "filenamePattern": "*.puml"
           }
         ],
         "priority": "default"
@@ -58,8 +54,5 @@
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.74.0",
     "typescript": "^5.0.0"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0"
   }
 }

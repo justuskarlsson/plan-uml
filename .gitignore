@@ -3,4 +3,4 @@ out/
 *.vsix
 .vscode-test/
 *.log
-plantuml*.jar
+plantuml-*.jar

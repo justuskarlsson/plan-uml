@@ -1,18 +1,18 @@
 import * as vscode from 'vscode';
-import { GraphvizRenderer } from './graphvizRenderer';
-import { LineMapper, NodeMapping } from './lineMapper';
+import { PlantUMLRenderer } from './plantumlRenderer';
+import { LineMapper, NodeMapping, EdgeMapping } from './lineMapper';
 import * as path from 'path';
 import * as fs from 'fs';
 
-export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider {
-    private static readonly viewType = 'graphviz.preview';
+export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider {
+    private static readonly viewType = 'plantuml.preview';
 
     constructor(private readonly context: vscode.ExtensionContext) {}
 
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
-        const provider = new GraphvizPreviewProvider(context);
+        const provider = new PlantUMLPreviewProvider(context);
         const providerRegistration = vscode.window.registerCustomEditorProvider(
-            GraphvizPreviewProvider.viewType,
+            PlantUMLPreviewProvider.viewType,
             provider,
             {
                 webviewOptions: {
@@ -45,16 +45,28 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
             }
         });
 
-        // Watch for file system changes
-        const watcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
-        const changeFileSubscription = watcher.onDidChange(async () => {
-            await this.updatePreview(document, webviewPanel);
-        });
+        // Watch for file system changes (only if we have a valid file path)
+        let watcher: vscode.FileSystemWatcher | undefined;
+        let changeFileSubscription: vscode.Disposable | undefined;
+        
+        try {
+            watcher = vscode.workspace.createFileSystemWatcher(document.uri.fsPath);
+            changeFileSubscription = watcher.onDidChange(async () => {
+                await this.updatePreview(document, webviewPanel);
+            });
+        } catch (error) {
+            // If file system watcher creation fails (e.g., no workspace), continue without it
+            console.warn('Could not create file system watcher:', error);
+        }
 
         webviewPanel.onDidDispose(() => {
             changeDocumentSubscription.dispose();
-            changeFileSubscription.dispose();
-            watcher.dispose();
+            if (changeFileSubscription) {
+                changeFileSubscription.dispose();
+            }
+            if (watcher) {
+                watcher.dispose();
+            }
         });
 
         // Handle messages from webview
@@ -70,7 +82,7 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
                     }
                     break;
                 case 'error':
-                    vscode.window.showErrorMessage(`Graphviz Preview: ${message.message}`);
+                    vscode.window.showErrorMessage(`PlantUML Preview: ${message.message}`);
                     break;
             }
         });
@@ -80,11 +92,12 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
         document: vscode.TextDocument,
         webviewPanel: vscode.WebviewPanel
     ): Promise<void> {
-        // Render Graphviz to SVG
-        const renderResult = await GraphvizRenderer.renderFile(document.uri);
+        // Render PlantUML to SVG
+        const renderResult = await PlantUMLRenderer.renderFile(document.uri);
         
-        // Get node mappings
-        const nodeMapping = await LineMapper.mapNodesToLines(document.uri);
+        // Get entity and edge mappings
+        const entityMapping = await LineMapper.mapNodesToLines(document.uri);
+        const edgeMapping = await LineMapper.mapEdgesToLines(document.uri);
 
         if (renderResult.error) {
             webviewPanel.webview.html = this.getErrorHtml(renderResult.error, webviewPanel.webview);
@@ -94,22 +107,24 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
         // Update webview content
         webviewPanel.webview.html = this.getWebviewContent(
             renderResult.svg,
-            nodeMapping,
+            entityMapping,
+            edgeMapping,
             webviewPanel.webview
         );
     }
 
-    private getWebviewContent(svg: string, nodeMapping: NodeMapping, webview: vscode.Webview): string {
-        // Inject node mapping into SVG for click handling
-        // We'll enhance the SVG with data attributes for node IDs
-        let enhancedSvg = this.enhanceSvgWithNodeIds(svg, nodeMapping);
-
+    private getWebviewContent(
+        svg: string, 
+        entityMapping: NodeMapping, 
+        edgeMapping: EdgeMapping,
+        webview: vscode.Webview
+    ): string {
         return `<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Graphviz Preview</title>
+    <title>PlantUML Preview</title>
     <style>
         body {
             margin: 0;
@@ -128,9 +143,17 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
         svg {
             max-width: 100%;
             height: auto;
+        }
+        g.entity {
             cursor: pointer;
         }
-        .node:hover {
+        g.entity:hover {
+            opacity: 0.8;
+        }
+        g.link {
+            cursor: pointer;
+        }
+        g.link:hover {
             opacity: 0.8;
         }
         .error {
@@ -141,97 +164,81 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
 </head>
 <body>
     <div class="container">
-        ${enhancedSvg}
+        ${svg}
     </div>
     <script>
         const vscode = acquireVsCodeApi();
-        const nodeMapping = ${JSON.stringify(nodeMapping)};
+        const entityMapping = ${JSON.stringify(entityMapping)};
+        const edgeMapping = ${JSON.stringify(edgeMapping)};
         
         // Add click handlers to SVG elements
         document.addEventListener('DOMContentLoaded', () => {
             const svg = document.querySelector('svg');
             if (!svg) return;
             
-            // Find all node elements (g elements with class containing 'node')
-            const nodeElements = svg.querySelectorAll('g[class*="node"], g[id^="node_"]');
+            // Get all entities (nodes)
+            const entities = [...svg.querySelectorAll('g.entity')].map(g => ({
+                id: g.id,
+                name: g.dataset.entity,     // from data-entity
+                sourceLine: g.dataset.sourceLine ? parseInt(g.dataset.sourceLine) : null,
+            }));
             
-            nodeElements.forEach(element => {
-                element.style.cursor = 'pointer';
-                element.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const nodeId = extractNodeId(element);
-                    if (nodeId && nodeMapping[nodeId]) {
-                        const line = nodeMapping[nodeId][0];
-                        vscode.postMessage({
-                            type: 'selectLine',
-                            line: line
-                        });
-                    }
-                });
-            });
+            // Get all links (edges)
+            const links = [...svg.querySelectorAll('g.link')].map(g => ({
+                id: g.id,
+                from: g.dataset.entity1,    // data-entity-1
+                to: g.dataset.entity2,      // data-entity-2
+            }));
             
-            // Also handle clicks on text and other child elements
-            const textElements = svg.querySelectorAll('text');
-            textElements.forEach(text => {
-                text.style.cursor = 'pointer';
-                text.addEventListener('click', (e) => {
+            // Click handler for entities
+            svg.querySelectorAll('g.entity').forEach(g => {
+                g.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    let parent = text.parentElement;
-                    while (parent && parent !== svg) {
-                        const nodeId = extractNodeId(parent);
-                        if (nodeId && nodeMapping[nodeId]) {
-                            const line = nodeMapping[nodeId][0];
+                    const entityName = g.dataset.entity;
+                    const sourceLine = g.dataset.sourceLine ? parseInt(g.dataset.sourceLine) : null;
+                    
+                    if (entityName) {
+                        let line = sourceLine;
+                        
+                        // If no sourceLine in data attribute, look up in mapping
+                        if (!line && entityMapping[entityName]) {
+                            line = entityMapping[entityName][0];
+                        }
+                        
+                        if (line) {
                             vscode.postMessage({
                                 type: 'selectLine',
                                 line: line
                             });
-                            return;
                         }
-                        parent = parent.parentElement;
+                    }
+                });
+            });
+            
+            // Click handler for links (edges)
+            svg.querySelectorAll('g.link').forEach(g => {
+                g.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const from = g.dataset.entity1;
+                    const to = g.dataset.entity2;
+                    
+                    if (from && to) {
+                        // Look up edge in mapping
+                        const edgeKey = from + '->' + to;
+                        if (edgeMapping[edgeKey] && edgeMapping[edgeKey].length > 0) {
+                            const line = edgeMapping[edgeKey][0];
+                            vscode.postMessage({
+                                type: 'selectLine',
+                                line: line
+                            });
+                        }
                     }
                 });
             });
         });
-        
-        function extractNodeId(element) {
-            // Try ID first
-            const id = element.getAttribute('id');
-            if (id) {
-                // Graphviz format: node_<nodeId> or cluster_<nodeId>
-                const match = id.match(/^(?:node|cluster)_(.+)$/);
-                if (match) {
-                    return match[1];
-                }
-                return id;
-            }
-            
-            // Try data attribute
-            return element.getAttribute('data-node-id');
-        }
     </script>
 </body>
 </html>`;
-    }
-
-    private enhanceSvgWithNodeIds(svg: string, nodeMapping: NodeMapping): string {
-        // Graphviz SVG typically has structure like:
-        // <g id="node1" class="node">
-        // We need to extract the node ID from the title or label
-        // For now, we'll rely on the ID pattern matching in the JavaScript
-        
-        // Try to add data attributes to help with mapping
-        // This is a best-effort enhancement
-        let enhanced = svg;
-        
-        // Find all node groups and try to extract node IDs
-        const nodeIdPattern = /<g\s+id="(node\d+)"[^>]*class="node"[^>]*>/g;
-        enhanced = enhanced.replace(nodeIdPattern, (match, nodeId) => {
-            // Try to find the actual node name from the title or label
-            // This is approximate - the JavaScript will handle the actual mapping
-            return match.replace('>', ` data-node-id="${nodeId}">`);
-        });
-        
-        return enhanced;
     }
 
     private getErrorHtml(error: string, webview: vscode.Webview): string {
@@ -240,7 +247,7 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Graphviz Preview - Error</title>
+    <title>PlantUML Preview - Error</title>
     <style>
         body {
             margin: 0;
@@ -258,9 +265,9 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
 </head>
 <body>
     <div class="error">
-        <h2>Graphviz Rendering Error</h2>
+        <h2>PlantUML Rendering Error</h2>
         <p>${this.escapeHtml(error)}</p>
-        <p><strong>Tip:</strong> Make sure Graphviz is installed and the 'dot' command is available in your PATH.</p>
+        <p><strong>Tip:</strong> Make sure Java is installed and the PlantUML JAR file (plantuml-1.2025.10.jar) is available in your workspace root.</p>
     </div>
 </body>
 </html>`;
@@ -275,4 +282,3 @@ export class GraphvizPreviewProvider implements vscode.CustomTextEditorProvider 
             .replace(/'/g, '&#039;');
     }
 }
-
