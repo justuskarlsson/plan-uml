@@ -25,12 +25,26 @@ export class PlantUMLRenderer {
     }
 
     /**
-     * Find the PlantUML JAR file in the workspace
+     * Find the PlantUML JAR file
+     * Priority: extension directory → workspace root → CWD
      */
-    static async findJarFile(workspaceRoot?: string): Promise<string | null> {
-        console.log('[PlantUML Renderer] Finding JAR file, workspace root:', workspaceRoot);
+    static async findJarFile(extensionPath?: string, workspaceRoot?: string): Promise<string | null> {
+        console.log('[PlantUML Renderer] Finding JAR file, extension path:', extensionPath, 'workspace root:', workspaceRoot);
         
-        // Try workspace root first
+        // Try extension directory first (bundled with extension)
+        if (extensionPath) {
+            const jarPath = path.join(extensionPath, 'plantuml-1.2025.10.jar');
+            console.log('[PlantUML Renderer] Checking extension directory for JAR:', jarPath);
+            try {
+                await fs.access(jarPath);
+                console.log('[PlantUML Renderer] JAR found in extension directory');
+                return jarPath;
+            } catch (error) {
+                console.log('[PlantUML Renderer] JAR not found in extension directory');
+            }
+        }
+
+        // Try workspace root (fallback for compatibility)
         if (workspaceRoot) {
             const jarPath = path.join(workspaceRoot, 'plantuml-1.2025.10.jar');
             console.log('[PlantUML Renderer] Checking workspace root for JAR:', jarPath);
@@ -43,7 +57,7 @@ export class PlantUMLRenderer {
             }
         }
 
-        // Try current working directory
+        // Try current working directory (last resort)
         const cwdJarPath = path.join(process.cwd(), 'plantuml-1.2025.10.jar');
         console.log('[PlantUML Renderer] Checking CWD for JAR:', cwdJarPath);
         try {
@@ -61,7 +75,7 @@ export class PlantUMLRenderer {
     /**
      * Render .puml file to SVG using PlantUML JAR
      */
-    static async renderFile(uri: vscode.Uri): Promise<RenderResult> {
+    static async renderFile(uri: vscode.Uri, context?: vscode.ExtensionContext): Promise<RenderResult> {
         console.log('[PlantUML Renderer] Starting render for:', uri.fsPath);
         
         console.log('[PlantUML Renderer] Step 1: Checking Java availability...');
@@ -76,7 +90,11 @@ export class PlantUMLRenderer {
             };
         }
 
-        console.log('[PlantUML Renderer] Step 2: Getting workspace root...');
+        console.log('[PlantUML Renderer] Step 2: Getting workspace root and extension path...');
+        // Get extension path
+        const extensionPath = context?.extensionPath;
+        console.log('[PlantUML Renderer] Extension path:', extensionPath || 'none');
+        
         // Get workspace root (handle case where there's no workspace)
         let workspaceRoot: string | undefined;
         try {
@@ -95,15 +113,15 @@ export class PlantUMLRenderer {
         }
 
         console.log('[PlantUML Renderer] Step 3: Finding JAR file...');
-        // Find JAR file
-        const jarPath = await this.findJarFile(workspaceRoot);
+        // Find JAR file (check extension directory first)
+        const jarPath = await this.findJarFile(extensionPath, workspaceRoot);
         console.log('[PlantUML Renderer] JAR file path:', jarPath || 'not found');
         
         if (!jarPath) {
-            console.error('[PlantUML Renderer] JAR file not found in workspace root:', workspaceRoot);
+            console.error('[PlantUML Renderer] JAR file not found');
             return {
                 svg: '',
-                error: 'PlantUML JAR file (plantuml-1.2025.10.jar) not found. Please ensure it is in the workspace root.'
+                error: 'PlantUML JAR file (plantuml-1.2025.10.jar) not found. The extension should include it, but it was not found in the extension directory, workspace root, or current directory.'
             };
         }
 
@@ -112,7 +130,18 @@ export class PlantUMLRenderer {
             const inputFile = uri.fsPath;
             const inputDir = path.dirname(inputFile);
             const inputBasename = path.basename(inputFile, '.puml');
-            const outputDir = path.join(inputDir, 'out');
+            
+            // Use extension storage for temporary files instead of workspace
+            let outputDir: string;
+            if (context?.globalStorageUri) {
+                const storagePath = context.globalStorageUri.fsPath;
+                outputDir = path.join(storagePath, 'plantuml-temp');
+                console.log('[PlantUML Renderer] Using extension storage for temp files:', outputDir);
+            } else {
+                // Fallback to workspace out directory if no storage available
+                outputDir = path.join(inputDir, 'out');
+                console.log('[PlantUML Renderer] Using workspace out directory (fallback):', outputDir);
+            }
             
             console.log('[PlantUML Renderer] Input file:', inputFile);
             console.log('[PlantUML Renderer] Input directory:', inputDir);

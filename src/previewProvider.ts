@@ -90,8 +90,8 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         document: vscode.TextDocument,
         webviewPanel: vscode.WebviewPanel
     ): Promise<void> {
-        // Render PlantUML to SVG
-        const renderResult = await PlantUMLRenderer.renderFile(document.uri);
+        // Render PlantUML to SVG (pass extension context)
+        const renderResult = await PlantUMLRenderer.renderFile(document.uri, this.context);
 
         // Get entity and edge mappings
         const entityMapping = await LineMapper.mapNodesToLines(document.uri);

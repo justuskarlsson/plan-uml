@@ -1,48 +1,50 @@
-# Graphviz Preview Extension
+# PlantUML Preview Extension
 
-A VS Code/Cursor extension that provides interactive preview of Graphviz (.dot) files with click-to-select navigation and MCP server support for Cursor agents.
+A VS Code extension that provides interactive preview of PlantUML (.puml) files with click-to-select navigation, zoom controls, and entity mapping.
 
 ## Features
 
-1. **Interactive Preview**: Visualize Graphviz files (.dot, .gv) in a preview panel
-2. **Click-to-Select**: Click nodes in the preview to jump to the corresponding line in the source file
-3. **Auto-refresh**: Preview automatically updates when the .dot file changes
-4. **MCP Server**: Exposes tools and resources for Cursor agents to interact with Graphviz files
+1. **Interactive Preview**: Visualize PlantUML files (.puml) in a preview panel
+2. **Click-to-Select**: Click entities in the preview to jump to the corresponding line in the source file
+3. **Auto-refresh**: Preview automatically updates when the .puml file changes
+4. **Zoom Controls**: Zoom in, zoom out, fit to window, and actual size controls
+5. **Pan and Zoom**: Mouse wheel zoom and drag to pan
+6. **Entity Mapping**: Automatic mapping of PlantUML entities to source code lines
 
 ## Requirements
 
-- Graphviz must be installed and the `dot` command must be available in your PATH
-- Install Graphviz from: https://graphviz.org/download/
+- **Java**: Java must be installed and available in your PATH
+  - The PlantUML JAR file is bundled with the extension (no manual installation needed)
+  - Install Java from: https://www.java.com/download/ or use your system's package manager
+
+## Installation
+
+### From VS Code Marketplace
+
+1. Open VS Code
+2. Go to Extensions view (Ctrl+Shift+X / Cmd+Shift+X)
+3. Search for "PlantUML Preview"
+4. Click Install
+
+### Manual Installation
+
+1. Download the `.vsix` file from the releases page
+2. Open VS Code
+3. Go to Extensions view
+4. Click the "..." menu and select "Install from VSIX..."
+5. Select the downloaded `.vsix` file
 
 ## Usage
 
-1. Open a `.dot` or `.gv` file
-2. Right-click and select "Open With" → "Graphviz Preview", or use the command palette: "Graphviz: Open Graphviz Preview"
-3. Click on any node in the preview to jump to its definition in the source file
+1. Open a `.puml` file
+2. The preview will open automatically, or right-click and select "Open With" → "PlantUML Preview"
+3. Alternatively, use the command palette: "PlantUML: Open PlantUML Preview"
+4. Click on any entity in the preview to jump to its definition in the source file
+5. Use the toolbar buttons to zoom, pan, and toggle between preview and source views
 
-## MCP Server
+## How It Works
 
-The extension exposes an MCP server that Cursor agents can use to interact with Graphviz files. See [MCP_CONFIG.md](./MCP_CONFIG.md) for setup instructions.
-
-### Tools
-
-- **render_graphviz**: Render a .dot file to SVG
-  - Parameters: `file_path` (string) - Path to the .dot file
-  - Returns: SVG content and success status
-
-- **get_node_line**: Get the line number(s) for a node ID
-  - Parameters: `file_path` (string), `node_id` (string)
-  - Returns: Line numbers where the node is defined
-
-- **open_preview**: Get instructions to open the preview
-  - Parameters: `file_path` (string)
-  - Returns: Instructions message
-
-### Resources
-
-- **graphviz://file/{path}**: Raw .dot file content
-- **graphviz://preview/{path}**: Rendered SVG preview
-- **graphviz://mapping/{path}**: Node-to-line mapping JSON
+The extension uses the PlantUML JAR file (bundled with the extension) to render `.puml` files to SVG. Temporary SVG files are stored in the extension's storage directory, not in your workspace, keeping your project clean.
 
 ## Development
 
