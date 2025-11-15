@@ -1,0 +1,30 @@
+@startuml state_machine
+
+state "start" as start_state #LightGreen
+state "node_click" as node_click_state #LightYellow
+
+[*] --> start_state : Initial
+
+start_state --> node_click_state : click node\n(select node1)
+
+node_click_state --> start_state : click node\n(create edge journey)\n"Create edge from node1 to node2"
+node_click_state --> start_state : Enter (no Shift)\n(rename/comment journey)\n"Rename/comment node1 to {text}"
+node_click_state --> start_state : ESC\n(cancel journey)
+
+node_click_state --> node_click_state : Shift+Enter\n(insert newline in input)
+
+note right of start_state
+  No node selected
+  Ready for first click
+end note
+
+note right of node_click_state
+  Node selected (node1)
+  Waiting for:
+  - Second node click → edge
+  - Keyboard input → rename/comment
+  - ESC → cancel
+end note
+
+@enduml
+

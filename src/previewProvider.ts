@@ -72,14 +72,9 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         // Handle messages from webview
         webviewPanel.webview.onDidReceiveMessage(async (message) => {
             switch (message.type) {
-                case 'selectLine':
-                    const line = message.line as number;
-                    if (line > 0) {
-                        const editor = await vscode.window.showTextDocument(document);
-                        const position = new vscode.Position(line - 1, 0);
-                        editor.selection = new vscode.Selection(position, position);
-                        editor.revealRange(new vscode.Range(position, position));
-                    }
+                case 'copyJourneysToClipboard':
+                    await vscode.env.clipboard.writeText(message.text);
+                    vscode.window.showInformationMessage('Journeys copied to clipboard');
                     break;
                 case 'error':
                     vscode.window.showErrorMessage(`PlantUML Preview: ${message.message}`);
@@ -178,6 +173,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             flex: 1;
             overflow: hidden;
             position: relative;
+            margin-right: 300px; /* Account for journey sidebar */
         }
         .preview-container {
             width: 100%;
@@ -240,6 +236,127 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         .panning g.link {
             cursor: move;
         }
+        /* Journey system styles */
+        .journey-sidebar {
+            position: fixed;
+            right: 0;
+            top: 41px; /* Below toolbar */
+            bottom: 0;
+            width: 300px;
+            background-color: var(--vscode-sideBar-background);
+            border-left: 1px solid var(--vscode-panel-border);
+            display: flex;
+            flex-direction: column;
+            z-index: 1000;
+            overflow: hidden;
+        }
+        .journey-header {
+            padding: 12px;
+            border-bottom: 1px solid var(--vscode-panel-border);
+            font-weight: bold;
+            font-size: 13px;
+            background-color: var(--vscode-sideBarTitle-background);
+            color: var(--vscode-sideBarTitle-foreground);
+        }
+        .journey-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 8px;
+        }
+        .journey-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 8px;
+            margin-bottom: 4px;
+            background-color: var(--vscode-list-activeSelectionBackground);
+            border: 1px solid var(--vscode-panel-border);
+            border-radius: 3px;
+            font-size: 12px;
+            word-wrap: break-word;
+        }
+        .journey-text {
+            flex: 1;
+            padding-right: 8px;
+            color: var(--vscode-list-activeSelectionForeground);
+        }
+        .journey-delete {
+            flex-shrink: 0;
+            width: 20px;
+            height: 20px;
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: 1px solid var(--vscode-button-border);
+            border-radius: 2px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            line-height: 1;
+            padding: 0;
+        }
+        .journey-delete:hover {
+            background-color: #ff4444;
+            color: white;
+        }
+        .input-container {
+            position: fixed;
+            top: 41px; /* Below toolbar */
+            right: 300px;
+            width: 300px;
+            padding: 12px;
+            background-color: var(--vscode-input-background);
+            border-left: 1px solid var(--vscode-panel-border);
+            border-bottom: 1px solid var(--vscode-panel-border);
+            z-index: 1001;
+            display: none;
+        }
+        .input-container.visible {
+            display: block;
+        }
+        .input-container textarea {
+            width: 100%;
+            padding: 6px;
+            background-color: var(--vscode-input-background);
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-input-border);
+            border-radius: 2px;
+            font-family: var(--vscode-font-family);
+            font-size: 12px;
+            resize: vertical;
+        }
+        .input-container textarea:focus {
+            outline: 1px solid var(--vscode-focusBorder);
+        }
+        .clipboard-button {
+            position: fixed;
+            bottom: 12px;
+            right: 12px;
+            width: 300px;
+            padding: 8px 12px;
+            background-color: var(--vscode-button-background);
+            color: var(--vscode-button-foreground);
+            border: 1px solid var(--vscode-button-border);
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 12px;
+            font-family: var(--vscode-font-family);
+            z-index: 1002;
+        }
+        .clipboard-button:hover {
+            background-color: var(--vscode-button-hoverBackground);
+        }
+        .clipboard-button:active {
+            opacity: 0.8;
+        }
+        g.entity.selected {
+            opacity: 0.6;
+            filter: drop-shadow(0 0 4px var(--vscode-focusBorder));
+        }
+        g.entity.node-click-state {
+            opacity: 0.7;
+            filter: drop-shadow(0 0 6px var(--vscode-focusBorder));
+        }
     </style>
 </head>
 <body>
@@ -263,6 +380,14 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             <pre class="source-code" id="sourceCode">${escapedSource}</pre>
         </div>
     </div>
+    <div class="input-container" id="inputContainer">
+        <textarea id="journeyInput" placeholder="Enter rename/comment text..." rows="3"></textarea>
+    </div>
+    <div class="journey-sidebar" id="journeySidebar">
+        <div class="journey-header">Journeys (<span id="journeyCount">0</span>)</div>
+        <div class="journey-list" id="journeyList"></div>
+    </div>
+    <button class="clipboard-button" id="clipboardButton">Copy Journeys to Clipboard</button>
     <script>
         const vscode = acquireVsCodeApi();
         const entityMapping = ${JSON.stringify(entityMapping)};
@@ -289,6 +414,121 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         const zoomActualBtn = document.getElementById('zoomActual');
         const zoomLevelSpan = document.getElementById('zoomLevel');
         
+        // Journey system elements
+        const inputContainer = document.getElementById('inputContainer');
+        const journeyInput = document.getElementById('journeyInput');
+        const journeySidebar = document.getElementById('journeySidebar');
+        const journeyList = document.getElementById('journeyList');
+        const journeyCount = document.getElementById('journeyCount');
+        const clipboardButton = document.getElementById('clipboardButton');
+        
+        // State machine
+        const stateMachine = {
+            state: 'start',
+            selectedNode: null,
+            selectedNodeElement: null,
+            journeys: [],
+            
+            transition(event, data) {
+                const previousState = this.state;
+                
+                switch (this.state) {
+                    case 'start':
+                        if (event === 'node_click') {
+                            this.state = 'node_click';
+                            this.selectedNode = data.nodeName;
+                            this.selectedNodeElement = data.nodeElement;
+                            this.highlightNode(data.nodeElement);
+                            // Input will be shown when user starts typing
+                        }
+                        break;
+                        
+                    case 'node_click':
+                        if (event === 'node_click') {
+                            // Create edge journey
+                            const journey = \`Create edge from \${this.selectedNode} to \${data.nodeName}\`;
+                            this.addJourney(journey);
+                            this.reset();
+                        } else if (event === 'keyboard_input') {
+                            // Create rename/comment journey
+                            const text = data.text.trim();
+                            if (text) {
+                                const journey = \`Rename/comment \${this.selectedNode} to \${text}\`;
+                                this.addJourney(journey);
+                            }
+                            this.reset();
+                        } else if (event === 'cancel') {
+                            this.reset();
+                        }
+                        break;
+                }
+            },
+            
+            reset() {
+                if (this.selectedNodeElement) {
+                    this.unhighlightNode(this.selectedNodeElement);
+                }
+                this.state = 'start';
+                this.selectedNode = null;
+                this.selectedNodeElement = null;
+                inputContainer.classList.remove('visible');
+                journeyInput.value = '';
+            },
+            
+            highlightNode(element) {
+                element.classList.add('node-click-state');
+            },
+            
+            unhighlightNode(element) {
+                element.classList.remove('node-click-state');
+            },
+            
+            addJourney(journey) {
+                this.journeys.push(journey);
+                this.updateJourneyList();
+            },
+            
+            removeJourney(index) {
+                this.journeys.splice(index, 1);
+                this.updateJourneyList();
+            },
+            
+            updateJourneyList() {
+                journeyList.innerHTML = '';
+                journeyCount.textContent = this.journeys.length;
+                
+                this.journeys.forEach((journey, index) => {
+                    const item = document.createElement('div');
+                    item.className = 'journey-item';
+                    
+                    const text = document.createElement('div');
+                    text.className = 'journey-text';
+                    text.textContent = journey;
+                    
+                    const deleteBtn = document.createElement('button');
+                    deleteBtn.className = 'journey-delete';
+                    deleteBtn.textContent = '×';
+                    deleteBtn.title = 'Delete journey';
+                    deleteBtn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        stateMachine.removeJourney(index);
+                    });
+                    
+                    item.appendChild(text);
+                    item.appendChild(deleteBtn);
+                    journeyList.appendChild(item);
+                });
+            },
+            
+            copyToClipboard() {
+                if (this.journeys.length === 0) {
+                    return;
+                }
+                const text = this.journeys.join('\\n');
+                vscode.postMessage({ type: 'copyJourneysToClipboard', text });
+            }
+        };
+        
         // Initialize
         document.addEventListener('DOMContentLoaded', () => {
             const svg = document.querySelector('svg');
@@ -297,8 +537,58 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             // Initialize to 1:1 centered
             initializeZoom();
             
-            // Setup click handlers for entities and edges
+            // Setup click handlers for entities (using state machine)
             setupClickHandlers(svg);
+            
+            // Setup clipboard button
+            clipboardButton.addEventListener('click', () => {
+                stateMachine.copyToClipboard();
+            });
+            
+            // Setup input field handlers
+            journeyInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    const text = journeyInput.value;
+                    stateMachine.transition('keyboard_input', { text });
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    stateMachine.transition('cancel');
+                }
+                // Shift+Enter allows newline (default behavior)
+            });
+            
+            // Show input when user starts typing in node_click state
+            document.addEventListener('keydown', (e) => {
+                if (stateMachine.state === 'node_click' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    // Show input if it's a printable character (not Escape, Enter, etc.)
+                    // Check if it's a regular character (not special keys)
+                    const isPrintable = e.key.length === 1 && 
+                                       e.key !== 'Escape' && 
+                                       e.key !== 'Enter' &&
+                                       !e.key.startsWith('Arrow') &&
+                                       !e.key.startsWith('F') && // Function keys
+                                       e.key !== 'Tab';
+                    
+                    if (isPrintable) {
+                        if (!inputContainer.classList.contains('visible')) {
+                            inputContainer.classList.add('visible');
+                            journeyInput.focus();
+                            // Let the character be typed normally into the input
+                        }
+                    }
+                }
+            });
+            
+            // Setup ESC key handler for canceling journey
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && stateMachine.state !== 'start') {
+                    // Only cancel if input is not focused (to allow ESC in input)
+                    if (document.activeElement !== journeyInput) {
+                        stateMachine.transition('cancel');
+                    }
+                }
+            });
             
             // Setup zoom controls
             zoomInBtn.addEventListener('click', () => zoomTo(zoom * 1.2));
@@ -525,21 +815,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         }
         
         function setupClickHandlers(svg) {
-            // Get all entities (nodes)
-            const entities = [...svg.querySelectorAll('g.entity')].map(g => ({
-                id: g.id,
-                name: g.dataset.entity,
-                sourceLine: g.dataset.sourceLine ? parseInt(g.dataset.sourceLine) : null,
-            }));
-            
-            // Get all links (edges)
-            const links = [...svg.querySelectorAll('g.link')].map(g => ({
-                id: g.id,
-                from: g.dataset.entity1,
-                to: g.dataset.entity2,
-            }));
-            
-            // Click handler for entities
+            // Click handler for entities (nodes) - uses state machine
             svg.querySelectorAll('g.entity').forEach(g => {
                 g.addEventListener('click', (e) => {
                     if (isPanning) {
@@ -548,45 +824,12 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
                     }
                     e.stopPropagation();
                     const entityName = g.dataset.entity;
-                    const sourceLine = g.dataset.sourceLine ? parseInt(g.dataset.sourceLine) : null;
                     
                     if (entityName) {
-                        let line = sourceLine;
-                        
-                        if (!line && entityMapping[entityName]) {
-                            line = entityMapping[entityName][0];
-                        }
-                        
-                        if (line) {
-                            vscode.postMessage({
-                                type: 'selectLine',
-                                line: line
-                            });
-                        }
-                    }
-                });
-            });
-            
-            // Click handler for links (edges)
-            svg.querySelectorAll('g.link').forEach(g => {
-                g.addEventListener('click', (e) => {
-                    if (isPanning) {
-                        e.stopPropagation();
-                        return;
-                    }
-                    e.stopPropagation();
-                    const from = g.dataset.entity1;
-                    const to = g.dataset.entity2;
-                    
-                    if (from && to) {
-                        const edgeKey = from + '->' + to;
-                        if (edgeMapping[edgeKey] && edgeMapping[edgeKey].length > 0) {
-                            const line = edgeMapping[edgeKey][0];
-                            vscode.postMessage({
-                                type: 'selectLine',
-                                line: line
-                            });
-                        }
+                        stateMachine.transition('node_click', {
+                            nodeName: entityName,
+                            nodeElement: g
+                        });
                     }
                 });
             });
