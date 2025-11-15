@@ -76,6 +76,9 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
                     await vscode.env.clipboard.writeText(message.text);
                     vscode.window.showInformationMessage('Journeys copied to clipboard');
                     break;
+                case 'reload':
+                    await this.updatePreview(document, webviewPanel);
+                    break;
                 case 'error':
                     vscode.window.showErrorMessage(`PlantUML Preview: ${message.message}`);
                     break;
@@ -350,12 +353,21 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             opacity: 0.8;
         }
         g.entity.selected {
-            opacity: 0.6;
-            filter: drop-shadow(0 0 4px var(--vscode-focusBorder));
+            opacity: 0.8;
+            filter: drop-shadow(0 0 8px var(--vscode-focusBorder)) drop-shadow(0 0 4px var(--vscode-focusBorder));
+            stroke: var(--vscode-focusBorder);
+            stroke-width: 3px;
         }
-        g.entity.node-click-state {
-            opacity: 0.7;
-            filter: drop-shadow(0 0 6px var(--vscode-focusBorder));
+        g.entity.selected * {
+            stroke: var(--vscode-focusBorder);
+            stroke-width: 2px;
+        }
+        .rectangle-selection {
+            position: absolute;
+            border: 2px dashed var(--vscode-focusBorder);
+            background-color: rgba(0, 123, 255, 0.1);
+            pointer-events: none;
+            z-index: 999;
         }
     </style>
 </head>
@@ -369,12 +381,15 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         <button id="zoomActual" title="Actual size (100%)">1:1</button>
         <div class="separator"></div>
         <span id="zoomLevel" style="padding: 0 8px; font-size: 12px;">100%</span>
+        <span id="selectionCounter" style="padding: 0 8px; font-size: 12px; display: none;"></span>
+        <button id="reloadButton" title="Reload SVG">Reload</button>
     </div>
     <div class="content-area">
         <div class="preview-container active" id="previewContainer">
             <div class="svg-wrapper" id="svgWrapper">
                 ${svg}
             </div>
+            <div class="rectangle-selection" id="rectangleSelection" style="display: none;"></div>
         </div>
         <div class="source-container" id="sourceContainer">
             <pre class="source-code" id="sourceCode">${escapedSource}</pre>
@@ -421,66 +436,102 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         const journeyList = document.getElementById('journeyList');
         const journeyCount = document.getElementById('journeyCount');
         const clipboardButton = document.getElementById('clipboardButton');
+        const selectionCounter = document.getElementById('selectionCounter');
+        const reloadButton = document.getElementById('reloadButton');
+        const rectangleSelection = document.getElementById('rectangleSelection');
         
-        // State machine
-        const stateMachine = {
-            state: 'start',
-            selectedNode: null,
-            selectedNodeElement: null,
+        // Selection-based state management
+        const selectionState = {
+            selectedNodes: [], // Array of {name, element}
+            isCreatingNode: false,
+            isRectangleSelecting: false,
+            rectangleStart: {x: 0, y: 0},
+            rectangleCurrent: {x: 0, y: 0},
             journeys: [],
             
-            transition(event, data) {
-                const previousState = this.state;
+            toggleNodeSelection(nodeName, nodeElement) {
+                const index = this.selectedNodes.findIndex(n => n.name === nodeName);
+                if (index >= 0) {
+                    // Deselect
+                    this.unhighlightNode(this.selectedNodes[index].element);
+                    this.selectedNodes.splice(index, 1);
+                } else {
+                    // Select
+                    this.highlightNode(nodeElement);
+                    this.selectedNodes.push({name: nodeName, element: nodeElement});
+                }
+                this.updateSelectionCounter();
+            },
+            
+            clearSelection() {
+                this.selectedNodes.forEach(node => {
+                    this.unhighlightNode(node.element);
+                });
+                this.selectedNodes = [];
+                this.updateSelectionCounter();
+            },
+            
+            selectNodesInRectangle(rect, svg) {
+                // Get all entity nodes
+                const entities = svg.querySelectorAll('g.entity');
+                const selected = [];
                 
-                switch (this.state) {
-                    case 'start':
-                        if (event === 'node_click') {
-                            this.state = 'node_click';
-                            this.selectedNode = data.nodeName;
-                            this.selectedNodeElement = data.nodeElement;
-                            this.highlightNode(data.nodeElement);
-                            // Input will be shown when user starts typing
+                entities.forEach(entity => {
+                    const bbox = entity.getBBox();
+                    // Check if node bounding box intersects with selection rectangle
+                    if (this.rectanglesIntersect(rect, {
+                        x: bbox.x,
+                        y: bbox.y,
+                        width: bbox.width,
+                        height: bbox.height
+                    })) {
+                        const entityName = entity.dataset.entity;
+                        if (entityName) {
+                            selected.push({name: entityName, element: entity});
                         }
-                        break;
-                        
-                    case 'node_click':
-                        if (event === 'node_click') {
-                            // Create edge journey
-                            const journey = \`Create edge from \${this.selectedNode} to \${data.nodeName}\`;
-                            this.addJourney(journey);
-                            this.reset();
-                        } else if (event === 'keyboard_input') {
-                            // Create rename/comment journey
-                            const text = data.text.trim();
-                            if (text) {
-                                const journey = \`Rename/comment \${this.selectedNode} to \${text}\`;
-                                this.addJourney(journey);
-                            }
-                            this.reset();
-                        } else if (event === 'cancel') {
-                            this.reset();
-                        }
-                        break;
+                    }
+                });
+                
+                // Replace selection with rectangle selection
+                this.clearSelection();
+                selected.forEach(node => {
+                    this.highlightNode(node.element);
+                    this.selectedNodes.push(node);
+                });
+                this.updateSelectionCounter();
+            },
+            
+            rectanglesIntersect(rect1, rect2) {
+                return !(rect2.x > rect1.x + rect1.width ||
+                        rect2.x + rect2.width < rect1.x ||
+                        rect2.y > rect1.y + rect1.height ||
+                        rect2.y + rect2.height < rect1.y);
+            },
+            
+            highlightNode(element) {
+                element.classList.add('selected');
+            },
+            
+            unhighlightNode(element) {
+                element.classList.remove('selected');
+            },
+            
+            updateSelectionCounter() {
+                const count = this.selectedNodes.length;
+                if (count > 0) {
+                    selectionCounter.textContent = \`\${count} selected\`;
+                    selectionCounter.style.display = 'inline';
+                } else {
+                    selectionCounter.style.display = 'none';
                 }
             },
             
             reset() {
-                if (this.selectedNodeElement) {
-                    this.unhighlightNode(this.selectedNodeElement);
-                }
-                this.state = 'start';
-                this.selectedNode = null;
-                this.selectedNodeElement = null;
+                this.clearSelection();
+                this.isCreatingNode = false;
+                this.isRectangleSelecting = false;
                 inputContainer.classList.remove('visible');
                 journeyInput.value = '';
-            },
-            
-            highlightNode(element) {
-                element.classList.add('node-click-state');
-            },
-            
-            unhighlightNode(element) {
-                element.classList.remove('node-click-state');
             },
             
             addJourney(journey) {
@@ -511,7 +562,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
                     deleteBtn.title = 'Delete journey';
                     deleteBtn.addEventListener('click', (e) => {
                         e.stopPropagation();
-                        stateMachine.removeJourney(index);
+                        selectionState.removeJourney(index);
                     });
                     
                     item.appendChild(text);
@@ -537,55 +588,160 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             // Initialize to 1:1 centered
             initializeZoom();
             
-            // Setup click handlers for entities (using state machine)
+            // Setup click handlers for entities (toggle selection)
             setupClickHandlers(svg);
             
             // Setup clipboard button
             clipboardButton.addEventListener('click', () => {
-                stateMachine.copyToClipboard();
+                selectionState.copyToClipboard();
+            });
+            
+            // Setup reload button
+            reloadButton.addEventListener('click', () => {
+                vscode.postMessage({ type: 'reload' });
+            });
+            
+            // Setup CTRL+CLICK for creating node
+            previewContainer.addEventListener('click', (e) => {
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !isPanning) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectionState.isCreatingNode = true;
+                    inputContainer.classList.add('visible');
+                    journeyInput.value = '';
+                    journeyInput.focus();
+                }
+            });
+            
+            // Setup Shift+Drag for rectangle selection
+            let rectangleStartX = 0;
+            let rectangleStartY = 0;
+            let isRectangleDragging = false;
+            
+            previewContainer.addEventListener('mousedown', (e) => {
+                if (e.shiftKey && e.button === 0 && !e.ctrlKey && !e.metaKey) {
+                    isRectangleDragging = true;
+                    selectionState.isRectangleSelecting = true;
+                    const rect = previewContainer.getBoundingClientRect();
+                    rectangleStartX = e.clientX - rect.left;
+                    rectangleStartY = e.clientY - rect.top;
+                    selectionState.rectangleStart = {x: rectangleStartX, y: rectangleStartY};
+                    rectangleSelection.style.display = 'block';
+                    rectangleSelection.style.left = rectangleStartX + 'px';
+                    rectangleSelection.style.top = rectangleStartY + 'px';
+                    rectangleSelection.style.width = '0px';
+                    rectangleSelection.style.height = '0px';
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+            
+            document.addEventListener('mousemove', (e) => {
+                if (isRectangleDragging) {
+                    const rect = previewContainer.getBoundingClientRect();
+                    const currentX = e.clientX - rect.left;
+                    const currentY = e.clientY - rect.top;
+                    
+                    const left = Math.min(rectangleStartX, currentX);
+                    const top = Math.min(rectangleStartY, currentY);
+                    const width = Math.abs(currentX - rectangleStartX);
+                    const height = Math.abs(currentY - rectangleStartY);
+                    
+                    rectangleSelection.style.left = left + 'px';
+                    rectangleSelection.style.top = top + 'px';
+                    rectangleSelection.style.width = width + 'px';
+                    rectangleSelection.style.height = height + 'px';
+                }
+            });
+            
+            document.addEventListener('mouseup', (e) => {
+                if (isRectangleDragging) {
+                    isRectangleDragging = false;
+                    const rect = previewContainer.getBoundingClientRect();
+                    const endX = e.clientX - rect.left;
+                    const endY = e.clientY - rect.top;
+                    
+                    const selectionRect = {
+                        x: Math.min(rectangleStartX, endX),
+                        y: Math.min(rectangleStartY, endY),
+                        width: Math.abs(endX - rectangleStartX),
+                        height: Math.abs(endY - rectangleStartY)
+                    };
+                    
+                    // Convert screen coordinates to SVG coordinates
+                    // Account for pan and zoom transform
+                    const svgX = (selectionRect.x - panX) / zoom;
+                    const svgY = (selectionRect.y - panY) / zoom;
+                    const svgWidth = selectionRect.width / zoom;
+                    const svgHeight = selectionRect.height / zoom;
+                    
+                    selectionState.selectNodesInRectangle({
+                        x: svgX,
+                        y: svgY,
+                        width: svgWidth,
+                        height: svgHeight
+                    }, svg);
+                    
+                    rectangleSelection.style.display = 'none';
+                    selectionState.isRectangleSelecting = false;
+                }
             });
             
             // Setup input field handlers
             journeyInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    const text = journeyInput.value;
-                    stateMachine.transition('keyboard_input', { text });
+                    const text = journeyInput.value.trim();
+                    
+                    if (selectionState.isCreatingNode) {
+                        // Create node journey
+                        if (text) {
+                            selectionState.addJourney(\`<Create Node>: \${text}\`);
+                        }
+                        selectionState.isCreatingNode = false;
+                        selectionState.reset();
+                    } else if (selectionState.selectedNodes.length > 0) {
+                        // Comment/action on selected nodes
+                        if (text) {
+                            const nodeNames = selectionState.selectedNodes.map(n => n.name).join(', ');
+                            selectionState.addJourney(\`\${text}\\n(\${nodeNames})\`);
+                        }
+                        selectionState.reset();
+                    }
                 } else if (e.key === 'Escape') {
                     e.preventDefault();
-                    stateMachine.transition('cancel');
+                    selectionState.reset();
                 }
                 // Shift+Enter allows newline (default behavior)
             });
             
-            // Show input when user starts typing in node_click state
+            // Show input when user starts typing while nodes are selected
             document.addEventListener('keydown', (e) => {
-                if (stateMachine.state === 'node_click' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-                    // Show input if it's a printable character (not Escape, Enter, etc.)
-                    // Check if it's a regular character (not special keys)
+                if (selectionState.selectedNodes.length > 0 && !selectionState.isCreatingNode && 
+                    !e.ctrlKey && !e.metaKey && !e.altKey) {
+                    // Show input if it's a printable character
                     const isPrintable = e.key.length === 1 && 
                                        e.key !== 'Escape' && 
                                        e.key !== 'Enter' &&
                                        !e.key.startsWith('Arrow') &&
-                                       !e.key.startsWith('F') && // Function keys
+                                       !e.key.startsWith('F') &&
                                        e.key !== 'Tab';
                     
                     if (isPrintable) {
                         if (!inputContainer.classList.contains('visible')) {
                             inputContainer.classList.add('visible');
                             journeyInput.focus();
-                            // Let the character be typed normally into the input
                         }
                     }
                 }
             });
             
-            // Setup ESC key handler for canceling journey
+            // Setup ESC key handler for canceling
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && stateMachine.state !== 'start') {
+                if (e.key === 'Escape') {
                     // Only cancel if input is not focused (to allow ESC in input)
                     if (document.activeElement !== journeyInput) {
-                        stateMachine.transition('cancel');
+                        selectionState.reset();
                     }
                 }
             });
@@ -614,7 +770,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             
             // Setup panning
             previewContainer.addEventListener('mousedown', (e) => {
-                if (e.button === 0 && !e.ctrlKey && !e.metaKey) {
+                if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                     isPanning = true;
                     panStartX = e.clientX;
                     panStartY = e.clientY;
@@ -815,21 +971,33 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         }
         
         function setupClickHandlers(svg) {
-            // Click handler for entities (nodes) - uses state machine
+            // Click handler for entities (nodes) - toggle selection
             svg.querySelectorAll('g.entity').forEach(g => {
                 g.addEventListener('click', (e) => {
                     if (isPanning) {
-                        e.stopPropagation();
                         return;
                     }
+                    
+                    // Handle CTRL+CLICK for creating node
+                    if (e.ctrlKey || e.metaKey) {
+                        e.stopPropagation();
+                        selectionState.isCreatingNode = true;
+                        inputContainer.classList.add('visible');
+                        journeyInput.value = '';
+                        journeyInput.focus();
+                        return;
+                    }
+                    
+                    // Don't toggle if shift key (used for rectangle selection)
+                    if (e.shiftKey) {
+                        return;
+                    }
+                    
                     e.stopPropagation();
                     const entityName = g.dataset.entity;
                     
                     if (entityName) {
-                        stateMachine.transition('node_click', {
-                            nodeName: entityName,
-                            nodeElement: g
-                        });
+                        selectionState.toggleNodeSelection(entityName, g);
                     }
                 });
             });
