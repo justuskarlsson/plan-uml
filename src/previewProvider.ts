@@ -260,6 +260,33 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             font-size: 13px;
             background-color: var(--vscode-sideBarTitle-background);
             color: var(--vscode-sideBarTitle-foreground);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+        .journey-header-title {
+            flex: 1;
+        }
+        .journey-header-buttons {
+            display: flex;
+            gap: 4px;
+        }
+        .journey-header-button {
+            padding: 2px 8px;
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
+            border: 1px solid var(--vscode-button-border);
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 11px;
+            font-family: var(--vscode-font-family);
+        }
+        .journey-header-button:hover {
+            background-color: var(--vscode-button-secondaryHoverBackground);
+        }
+        .journey-header-button:active {
+            opacity: 0.8;
         }
         .journey-list {
             flex: 1;
@@ -331,27 +358,6 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         .input-container textarea:focus {
             outline: 1px solid var(--vscode-focusBorder);
         }
-        .clipboard-button {
-            position: fixed;
-            bottom: 12px;
-            right: 12px;
-            width: 300px;
-            padding: 8px 12px;
-            background-color: var(--vscode-button-background);
-            color: var(--vscode-button-foreground);
-            border: 1px solid var(--vscode-button-border);
-            border-radius: 2px;
-            cursor: pointer;
-            font-size: 12px;
-            font-family: var(--vscode-font-family);
-            z-index: 1002;
-        }
-        .clipboard-button:hover {
-            background-color: var(--vscode-button-hoverBackground);
-        }
-        .clipboard-button:active {
-            opacity: 0.8;
-        }
         g.entity.selected {
             opacity: 0.8;
             filter: drop-shadow(0 0 8px var(--vscode-focusBorder)) drop-shadow(0 0 4px var(--vscode-focusBorder));
@@ -399,10 +405,15 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         <textarea id="journeyInput" placeholder="Enter rename/comment text..." rows="3"></textarea>
     </div>
     <div class="journey-sidebar" id="journeySidebar">
-        <div class="journey-header">Journeys (<span id="journeyCount">0</span>)</div>
+        <div class="journey-header">
+            <span class="journey-header-title">Journeys (<span id="journeyCount">0</span>)</span>
+            <div class="journey-header-buttons">
+                <button class="journey-header-button" id="clipboardButton">clipboard</button>
+                <button class="journey-header-button" id="resetButton">reset</button>
+            </div>
+        </div>
         <div class="journey-list" id="journeyList"></div>
     </div>
-    <button class="clipboard-button" id="clipboardButton">Copy Journeys to Clipboard</button>
     <script>
         const vscode = acquireVsCodeApi();
         const entityMapping = ${JSON.stringify(entityMapping)};
@@ -436,6 +447,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         const journeyList = document.getElementById('journeyList');
         const journeyCount = document.getElementById('journeyCount');
         const clipboardButton = document.getElementById('clipboardButton');
+        const resetButton = document.getElementById('resetButton');
         const selectionCounter = document.getElementById('selectionCounter');
         const reloadButton = document.getElementById('reloadButton');
         const rectangleSelection = document.getElementById('rectangleSelection');
@@ -594,6 +606,12 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
             // Setup clipboard button
             clipboardButton.addEventListener('click', () => {
                 selectionState.copyToClipboard();
+            });
+            
+            // Setup reset button
+            resetButton.addEventListener('click', () => {
+                selectionState.journeys = [];
+                selectionState.updateJourneyList();
             });
             
             // Setup reload button
