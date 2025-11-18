@@ -1,15 +1,15 @@
 {
-  "name": "haip-uml",
-  "displayName": "Haip UML",
+  "name": "plan-uml",
+  "displayName": "Plan UML",
   "description": "Interactive preview for PlantUML (.puml) files with click-to-select navigation, zoom controls, and entity mapping",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "publisher": "justuskarlsson",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/your-username/graphviz-extension.git"
+    "url": "https://github.com/justuskarlsson/plan-uml.git"
   },
-  "homepage": "https://github.com/your-username/graphviz-extension#readme",
+  "homepage": "https://github.com/justuskarlsson/plan-uml#readme",
   "keywords": [
     "plantuml",
     "puml",
