@@ -6,4 +6,5 @@ tsconfig.json
 *.vsix
 node_modules/**
 pnpm-lock.yaml
+plantuml-1.2025.10.jar
 
