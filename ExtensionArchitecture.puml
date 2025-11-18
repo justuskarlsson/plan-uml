@@ -8,7 +8,7 @@ skinparam component {
   BackgroundColor<<Preview>> #E8F5E9
   BackgroundColor<<Renderer>> #FFF9C4
   BackgroundColor<<Mapper>> #FFCDD2
-  BackgroundColor<<MCP>> #F8BBD0
+  BackgroundColor<<Extension>> #BBDEFB
 }
 
 actor User
@@ -16,107 +16,120 @@ actor User
 package "VS Code Extension Host" {
   [extension.ts\n(Activation)] <<Extension>>
 
-  [GraphvizPreviewProvider\npreviewProvider.ts] <<Preview>>
-  [GraphvizRenderer\ngraphvizRenderer.ts] <<Renderer>>
+  [PlantUMLPreviewProvider\npreviewProvider.ts] <<Preview>>
+  [PlantUMLRenderer\nplantumlRenderer.ts] <<Renderer>>
   [LineMapper\nlineMapper.ts] <<Mapper>>
-
-  [MCP Server\nmcpServer.ts] <<MCP>>
-  [MCP Entry Point\nmcpServerEntry.ts] <<MCP>>
 
   interface "VS Code API\n(Workspace, Commands)" as VSCodeAPI
   interface "Webview Panel\n(HTML/SVG Display)" as Webview
 }
 
 package "External Processes" {
-  [Graphviz dot\n(External Command)] as DotProc
+  [Java Runtime\n(External Command)] as JavaProc
+  [PlantUML JAR\nplantuml-1.2025.10.jar] as PlantUMLJar
 }
 
 package "User Actions" {
-  usecase "Open .dot/.gv File" as UC_Open
+  usecase "Open .puml File" as UC_Open
   usecase "Run Open Preview Command" as UC_Cmd
-  usecase "Click Node in Preview" as UC_Click
-}
-
-package "MCP Tools" {
-  [render_graphviz] <<MCP>>
-  [get_node_line] <<MCP>>
-  [open_preview] <<MCP>>
+  usecase "Click Entity in Preview" as UC_Click
+  usecase "Select Entities\n(Click/Shift+Drag)" as UC_Select
+  usecase "Create Journey\n(Ctrl+Click)" as UC_Journey
 }
 
 ' --- Entry & commands ---
 User --> UC_Open
 User --> UC_Cmd
 User --> UC_Click
+User --> UC_Select
+User --> UC_Journey
 
 UC_Open --> [extension.ts\n(Activation)]
 UC_Cmd  --> [extension.ts\n(Activation)]
 
-[extension.ts\n(Activation)] --> [GraphvizPreviewProvider\npreviewProvider.ts] : registerCustomEditor()
-[extension.ts\n(Activation)] --> VSCodeAPI : registerCommand()
+[extension.ts\n(Activation)] --> [PlantUMLPreviewProvider\npreviewProvider.ts] : registerCustomEditorProvider()
+[extension.ts\n(Activation)] --> VSCodeAPI : registerCommand('plantuml.openPreview')
+[extension.ts\n(Activation)] --> [PlantUMLRenderer\nplantumlRenderer.ts] : downloadJarFile()\n(if needed)
 
 ' --- Preview flows ---
-UC_Open --> [GraphvizPreviewProvider\npreviewProvider.ts] : open file
-UC_Cmd  --> [GraphvizPreviewProvider\npreviewProvider.ts] : open preview
+UC_Open --> [PlantUMLPreviewProvider\npreviewProvider.ts] : resolveCustomTextEditor()
+UC_Cmd  --> [PlantUMLPreviewProvider\npreviewProvider.ts] : open preview
 
-[GraphvizPreviewProvider\npreviewProvider.ts] --> [GraphvizRenderer\ngraphvizRenderer.ts] : renderFile()
-[GraphvizPreviewProvider\npreviewProvider.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()
+[PlantUMLPreviewProvider\npreviewProvider.ts] --> [PlantUMLRenderer\nplantumlRenderer.ts] : renderFile()
+[PlantUMLPreviewProvider\npreviewProvider.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()\nmapEdgesToLines()
 
-[GraphvizRenderer\ngraphvizRenderer.ts] --> DotProc : exec("dot -Tsvg")
-[GraphvizRenderer\ngraphvizRenderer.ts] --> VSCodeAPI : openTextDocument()
-[LineMapper\nlineMapper.ts] --> VSCodeAPI : openTextDocument()
+[PlantUMLRenderer\nplantumlRenderer.ts] --> JavaProc : exec("java -jar plantuml.jar")
+[PlantUMLRenderer\nplantumlRenderer.ts] --> PlantUMLJar : findJarFile()\n(check multiple locations)
+[PlantUMLRenderer\nplantumlRenderer.ts] --> VSCodeAPI : checkJavaAvailable()
 
-[GraphvizRenderer\ngraphvizRenderer.ts] --> [GraphvizPreviewProvider\npreviewProvider.ts] : SVG
-[LineMapper\nlineMapper.ts] --> [GraphvizPreviewProvider\npreviewProvider.ts] : NodeMapping
+[LineMapper\nlineMapper.ts] --> VSCodeAPI : openTextDocument()\n(parse .puml file)
 
-[GraphvizPreviewProvider\npreviewProvider.ts] --> Webview : update HTML/SVG
-Webview --> [GraphvizPreviewProvider\npreviewProvider.ts] : postMessage(selectLine)
+[PlantUMLRenderer\nplantumlRenderer.ts] --> [PlantUMLPreviewProvider\npreviewProvider.ts] : RenderResult { svg, error? }
+[LineMapper\nlineMapper.ts] --> [PlantUMLPreviewProvider\npreviewProvider.ts] : NodeMapping\nEdgeMapping
 
-UC_Click --> Webview : click node
-[GraphvizPreviewProvider\npreviewProvider.ts] --> VSCodeAPI : showTextDocument()\nrevealRange()
+[PlantUMLPreviewProvider\npreviewProvider.ts] --> Webview : update HTML/SVG\n(with interactive features)
+Webview --> [PlantUMLPreviewProvider\npreviewProvider.ts] : postMessage()\n(copyJourneysToClipboard, reload, error)
 
-VSCodeAPI --> [GraphvizPreviewProvider\npreviewProvider.ts] : onDidChangeTextDocument
-VSCodeAPI --> [GraphvizPreviewProvider\npreviewProvider.ts] : onDidChange (FS)
+UC_Click --> Webview : click entity
+UC_Select --> Webview : select entities
+UC_Journey --> Webview : create journey entry
 
-' --- MCP server flow ---
-[MCP Entry Point\nmcpServerEntry.ts] --> [MCP Server\nmcpServer.ts] : startMcpServer()
-[MCP Server\nmcpServer.ts] --> DotProc : renderGraphvizContent()
-[MCP Server\nmcpServer.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()
-
-[MCP Server\nmcpServer.ts] --> [render_graphviz]
-[MCP Server\nmcpServer.ts] --> [get_node_line]
-[MCP Server\nmcpServer.ts] --> [open_preview]
+VSCodeAPI --> [PlantUMLPreviewProvider\npreviewProvider.ts] : onDidChangeTextDocument
+VSCodeAPI --> [PlantUMLPreviewProvider\npreviewProvider.ts] : onDidChange (FileSystemWatcher)
 
 ' --- Internal APIs (explicitly annotating key methods) ---
-rectangle "GraphvizRenderer API" #FFF9C4 {
-  () "checkDotAvailable()" as checkDot
-  () "renderToSvg()" as renderToSvg
+rectangle "PlantUMLRenderer API" #FFF9C4 {
+  () "downloadJarFile()" as downloadJar
+  () "checkJavaAvailable()" as checkJava
+  () "findJarFile()" as findJar
   () "renderFile()" as renderFile
+  () "renderToSvg()" as renderToSvg
 
-  [GraphvizRenderer\ngraphvizRenderer.ts] ..> checkDot
-  [GraphvizRenderer\ngraphvizRenderer.ts] ..> renderToSvg
-  [GraphvizRenderer\ngraphvizRenderer.ts] ..> renderFile
+  [PlantUMLRenderer\nplantumlRenderer.ts] ..> downloadJar
+  [PlantUMLRenderer\nplantumlRenderer.ts] ..> checkJava
+  [PlantUMLRenderer\nplantumlRenderer.ts] ..> findJar
+  [PlantUMLRenderer\nplantumlRenderer.ts] ..> renderFile
+  [PlantUMLRenderer\nplantumlRenderer.ts] ..> renderToSvg
 }
 
 rectangle "LineMapper API" #FFCDD2 {
   () "mapNodesToLines()" as mapNodes
-  () "getNodeLine()" as getLine
-  () "extractNodeIdFromSvgElement()" as extractId
+  () "mapEdgesToLines()" as mapEdges
+  () "getEntityLine()" as getEntityLine
+  () "getEdgeLine()" as getEdgeLine
 
   [LineMapper\nlineMapper.ts] ..> mapNodes
-  [LineMapper\nlineMapper.ts] ..> getLine
-  [LineMapper\nlineMapper.ts] ..> extractId
+  [LineMapper\nlineMapper.ts] ..> mapEdges
+  [LineMapper\nlineMapper.ts] ..> getEntityLine
+  [LineMapper\nlineMapper.ts] ..> getEdgeLine
 }
 
 rectangle "PreviewProvider API" #E8F5E9 {
   () "resolveCustomTextEditor()" as resolveEditor
   () "updatePreview()" as updatePreview
   () "getWebviewContent()" as getContent
-  () "enhanceSvgWithNodeIds()" as enhanceSvg
+  () "getErrorHtml()" as getError
 
-  [GraphvizPreviewProvider\npreviewProvider.ts] ..> resolveEditor
-  [GraphvizPreviewProvider\npreviewProvider.ts] ..> updatePreview
-  [GraphvizPreviewProvider\npreviewProvider.ts] ..> getContent
-  [GraphvizPreviewProvider\npreviewProvider.ts] ..> enhanceSvg
+  [PlantUMLPreviewProvider\npreviewProvider.ts] ..> resolveEditor
+  [PlantUMLPreviewProvider\npreviewProvider.ts] ..> updatePreview
+  [PlantUMLPreviewProvider\npreviewProvider.ts] ..> getContent
+  [PlantUMLPreviewProvider\npreviewProvider.ts] ..> getError
 }
+
+note right of Webview
+  Interactive Features:
+  - Zoom & Pan
+  - Entity Selection
+  - Journey Tracking
+  - Source Code View Toggle
+end note
+
+note right of PlantUMLJar
+  JAR File Locations:
+  1. Extension directory
+  2. Global storage
+  3. Workspace root
+  4. Current working directory
+end note
 
 @enduml
