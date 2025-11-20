@@ -95,6 +95,12 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
                 case 'error':
                     vscode.window.showErrorMessage(`PlantUML Preview: ${message.message}`);
                     break;
+                case 'viewSource':
+                    // Switch to viewing the source file in the editor
+                    await vscode.window.showTextDocument(document.uri);
+                    // Close the preview webview to return to normal editor view
+                    webviewPanel.dispose();
+                    break;
                 case 'closePreview':
                     webviewPanel.dispose();
                     break;

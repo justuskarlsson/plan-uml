@@ -2,7 +2,7 @@
   "name": "plan-uml",
   "displayName": "Plan UML",
   "description": "Interactive preview for PlantUML (.puml) files with click-to-select navigation, zoom controls, and entity mapping",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "justuskarlsson",
   "license": "MIT",
   "repository": {
@@ -56,6 +56,11 @@
         "command": "plantuml.reloadWebviews",
         "title": "Reload All Previews",
         "category": "PlantUML"
+      },
+      {
+        "command": "plantuml.writeCursorRules",
+        "title": "Write plan-uml cursor rules",
+        "category": "PlantUML"
       }
     ],
     "customEditors": [
@@ -72,9 +77,10 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
+    "vscode:prepublish": "npm run compile && npm run copy-resources",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "copy-resources": "node -e \"require('fs').mkdirSync('resources', {recursive: true}); require('fs').copyFileSync('.cursor/rules/plan-uml.mdc', 'resources/plan-uml.mdc')\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

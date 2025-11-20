@@ -14,7 +14,7 @@ export async function activate(context: vscode.ExtensionContext) {
     if (context.globalStorageUri) {
         const globalStoragePath = context.globalStorageUri.fsPath;
         const jarPath = path.join(globalStoragePath, 'plantuml-1.2025.10.jar');
-        
+
         try {
             // Check if jar already exists
             await fs.access(jarPath);
@@ -27,7 +27,7 @@ export async function activate(context: vscode.ExtensionContext) {
                 title: 'Downloading PlantUML JAR file',
                 cancellable: false
             };
-            
+
             try {
                 await vscode.window.withProgress(progressOptions, async () => {
                     // Ensure directory exists
@@ -105,6 +105,71 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(reloadWebviewsCommand);
+
+    // Register command to write cursor rules to workspace
+    const writeCursorRulesCommand = vscode.commands.registerCommand('plantuml.writeCursorRules', async () => {
+        try {
+            // Get the cursor rules file from extension resources
+            const rulesUri = vscode.Uri.joinPath(context.extensionUri, 'resources', 'plan-uml.mdc');
+
+            // Read the file content
+            const rulesContent = await vscode.workspace.fs.readFile(rulesUri);
+            const rulesText = Buffer.from(rulesContent).toString('utf-8');
+
+            // Get workspace folder
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+
+            // Try to write the file if workspace folder exists
+            if (workspaceFolder) {
+                // Create target path: .cursor/rules/plan-uml.mdc
+                const targetUri = vscode.Uri.joinPath(workspaceFolder.uri, '.cursor', 'rules', 'plan-uml.mdc');
+
+                // Try to write the file
+                try {
+                    // Ensure .cursor/rules directory exists
+                    const rulesDirUri = vscode.Uri.joinPath(workspaceFolder.uri, '.cursor', 'rules');
+                    try {
+                        await vscode.workspace.fs.createDirectory(rulesDirUri);
+                    } catch (error: any) {
+                        // Directory might already exist, ignore
+                        if (error.code !== 'EEXIST' && error.code !== 'FileExists') {
+                            throw error;
+                        }
+                    }
+
+                    // Write the file
+                    await vscode.workspace.fs.writeFile(targetUri, Buffer.from(rulesText, 'utf-8'));
+                    vscode.window.showInformationMessage('Cursor rules written to .cursor/rules/plan-uml.mdc');
+                    return;
+                } catch (writeError: any) {
+                    // If we can't write, fall through to opening in editor
+                    console.log('[Extension] Could not write cursor rules file:', writeError);
+                }
+            }
+
+            // Fallback: open the file in the editor (no workspace or write failed)
+            const doc = await vscode.workspace.openTextDocument({
+                content: rulesText,
+                language: 'markdown'
+            });
+            await vscode.window.showTextDocument(doc);
+            if (!workspaceFolder) {
+                vscode.window.showInformationMessage(
+                    'No workspace folder found. File opened in editor - please copy it manually to .cursor/rules/plan-uml.mdc in your workspace',
+                    { modal: false }
+                );
+            } else {
+                vscode.window.showInformationMessage(
+                    'Could not write to .cursor/rules/plan-uml.mdc. File opened in editor - please copy it manually to .cursor/rules/plan-uml.mdc',
+                    { modal: false }
+                );
+            }
+        } catch (error: any) {
+            console.error('[Extension] Failed to write cursor rules:', error);
+            vscode.window.showErrorMessage(`Failed to write cursor rules: ${error.message}`);
+        }
+    });
+    context.subscriptions.push(writeCursorRulesCommand);
 }
 
 export function deactivate() {

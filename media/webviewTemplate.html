@@ -277,14 +277,16 @@
             outline: 1px solid var(--vscode-focusBorder);
         }
 
-        g.entity.selected {
+        g.entity.selected,
+        g.cluster.selected {
             opacity: 0.8;
             filter: drop-shadow(0 0 8px var(--vscode-focusBorder)) drop-shadow(0 0 4px var(--vscode-focusBorder));
             stroke: var(--vscode-focusBorder);
             stroke-width: 3px;
         }
 
-        g.entity.selected * {
+        g.entity.selected *,
+        g.cluster.selected * {
             stroke: var(--vscode-focusBorder);
             stroke-width: 2px;
         }
@@ -301,6 +303,11 @@
 
         g.link.selected polygon {
             fill: var(--vscode-focusBorder);
+        }
+
+        g.selected {
+            opacity: 0.8;
+            filter: drop-shadow(0 0 8px var(--vscode-focusBorder)) drop-shadow(0 0 4px var(--vscode-focusBorder));
         }
 
         .rectangle-selection {
@@ -388,8 +395,7 @@
 
         // Selection-based state management
         const selectionState = {
-            selectedNodes: [], // Array of {uid, lineNumber, element}
-            selectedEdges: [], // Array of {uid, lineNumber, element}
+            selectedElements: [], // Array of {uid, lineNumber, element}
             isCreatingNode: false,
             isRectangleSelecting: false,
             rectangleStart: { x: 0, y: 0 },
@@ -423,132 +429,75 @@
                 return element.id || '';
             },
 
-            toggleNodeSelection(nodeElement) {
-                const sourceLine = nodeElement.dataset.sourceLine;
+            toggleSelection(element) {
+                const sourceLine = element.dataset.sourceLine;
                 if (sourceLine === undefined) {
-                    console.warn('[Selection] Missing sourceLine for node:', nodeElement);
+                    console.warn('[Selection] Missing sourceLine for element:', element);
                     return;
                 }
 
                 const lineNumber = parseInt(sourceLine, 10);
-                const uid = this.getUidForElement(nodeElement);
-                const index = this.selectedNodes.findIndex(n => n.uid === uid && n.lineNumber === lineNumber);
+                const uid = this.getUidForElement(element);
+                const index = this.selectedElements.findIndex(e => e.uid === uid && e.lineNumber === lineNumber);
                 if (index >= 0) {
                     // Deselect
-                    this.unhighlightNode(this.selectedNodes[index].element);
-                    this.selectedNodes.splice(index, 1);
+                    this.unhighlightElement(this.selectedElements[index].element);
+                    this.selectedElements.splice(index, 1);
                 } else {
                     // Select
-                    this.highlightNode(nodeElement);
-                    this.selectedNodes.push({ uid: uid, lineNumber: lineNumber, element: nodeElement });
+                    this.highlightElement(element);
+                    this.selectedElements.push({ uid: uid, lineNumber: lineNumber, element: element });
                 }
-                this.updateSelectionCounter();
-            },
-
-            toggleEdgeSelection(edgeElement) {
-                const sourceLine = edgeElement.dataset.sourceLine;
-                console.log('[Edge Selection] toggleEdgeSelection called', { edgeElement, sourceLine });
-
-                if (sourceLine === undefined) {
-                    console.warn('[Edge Selection] Missing sourceLine for edge:', edgeElement);
-                    return;
-                }
-
-                const lineNumber = parseInt(sourceLine, 10);
-                const uid = this.getUidForElement(edgeElement);
-                console.log('[Edge Selection] Determined uid:', uid);
-
-                const index = this.selectedEdges.findIndex(e => e.uid === uid && e.lineNumber === lineNumber);
-                if (index >= 0) {
-                    // Deselect
-                    console.log('[Edge Selection] Deselecting edge:', uid);
-                    this.unhighlightEdge(this.selectedEdges[index].element);
-                    this.selectedEdges.splice(index, 1);
-                } else {
-                    // Select
-                    console.log('[Edge Selection] Selecting edge:', uid);
-                    this.highlightEdge(edgeElement);
-                    this.selectedEdges.push({ uid: uid, lineNumber: lineNumber, element: edgeElement });
-                }
-                console.log('[Edge Selection] Current selectedEdges:', this.selectedEdges.map(e => `${e.uid}:${e.lineNumber + 1}`));
                 this.updateSelectionCounter();
             },
 
             clearSelection() {
-                this.selectedNodes.forEach(node => {
-                    this.unhighlightNode(node.element);
+                this.selectedElements.forEach(item => {
+                    this.unhighlightElement(item.element);
                 });
-                this.selectedEdges.forEach(edge => {
-                    this.unhighlightEdge(edge.element);
-                });
-                this.selectedNodes = [];
-                this.selectedEdges = [];
+                this.selectedElements = [];
                 this.updateSelectionCounter();
             },
 
-            selectNodesInRectangle(rect, svg) {
-                // Get all entity nodes
-                const entities = svg.querySelectorAll('g.entity');
-                const selectedNodes = [];
+            selectElementsInRectangle(rect, svg) {
+                // Get all <g> elements (entities, links, clusters, etc.)
+                const allGroups = svg.querySelectorAll('g');
+                const newSelectedElements = [];
 
-                entities.forEach(entity => {
-                    const bbox = entity.getBBox();
-                    // Check if node bounding box intersects with selection rectangle
-                    if (this.rectanglesIntersect(rect, {
-                        x: bbox.x,
-                        y: bbox.y,
-                        width: bbox.width,
-                        height: bbox.height
-                    })) {
-                        const sourceLine = entity.dataset.sourceLine;
-                        if (sourceLine !== undefined) {
-                            const lineNumber = parseInt(sourceLine, 10);
-                            const uid = selectionState.getUidForElement(entity);
-                            selectedNodes.push({ uid: uid, lineNumber: lineNumber, element: entity });
-                        }
-                    }
-                });
-
-                // Get all edges
-                const links = svg.querySelectorAll('g.link');
-                const selectedEdges = [];
-
-                console.log('[Edge Selection] Rectangle selection: found', links.length, 'links');
-                links.forEach(link => {
+                allGroups.forEach(group => {
                     try {
-                        const bbox = link.getBBox();
-                        // Check if edge bounding box intersects with selection rectangle
+                        const bbox = group.getBBox();
+                        // Check if element bounding box intersects with selection rectangle
                         if (this.rectanglesIntersect(rect, {
                             x: bbox.x,
                             y: bbox.y,
                             width: bbox.width,
                             height: bbox.height
                         })) {
-                            const sourceLine = link.dataset.sourceLine;
-                            console.log('[Edge Selection] Rectangle: checking link', { sourceLine, bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height } });
+                            const sourceLine = group.dataset.sourceLine;
                             if (sourceLine !== undefined) {
                                 const lineNumber = parseInt(sourceLine, 10);
-                                const uid = selectionState.getUidForElement(link);
-                                selectedEdges.push({ uid: uid, lineNumber: lineNumber, element: link });
-                                console.log('[Edge Selection] Rectangle: selected edge', `${uid}:${lineNumber + 1}`);
+                                const uid = this.getUidForElement(group);
+                                newSelectedElements.push({ uid: uid, lineNumber: lineNumber, element: group });
                             }
                         }
                     } catch (e) {
-                        // Some edges might not have valid bounding boxes, skip them
-                        console.warn('[Edge Selection] Rectangle: error getting bbox for link', e);
+                        // Some elements might not have valid bounding boxes, skip them
+                        console.warn('[Selection] Rectangle: error getting bbox for element', e);
                     }
                 });
-                console.log('[Edge Selection] Rectangle selection: selected', selectedEdges.length, 'edges');
 
-                // Replace selection with rectangle selection
-                this.clearSelection();
-                selectedNodes.forEach(node => {
-                    this.highlightNode(node.element);
-                    this.selectedNodes.push(node);
-                });
-                selectedEdges.forEach(edge => {
-                    this.highlightEdge(edge.element);
-                    this.selectedEdges.push(edge);
+                // Add to existing selection (avoid duplicates)
+                newSelectedElements.forEach(item => {
+                    // Check if this element is already selected
+                    const isAlreadySelected = this.selectedElements.some(
+                        existing => existing.uid === item.uid && existing.lineNumber === item.lineNumber
+                    );
+
+                    if (!isAlreadySelected) {
+                        this.highlightElement(item.element);
+                        this.selectedElements.push(item);
+                    }
                 });
                 this.updateSelectionCounter();
             },
@@ -560,36 +509,18 @@
                     rect2.y + rect2.height < rect1.y);
             },
 
-            highlightNode(element) {
+            highlightElement(element) {
                 element.classList.add('selected');
             },
 
-            unhighlightNode(element) {
-                element.classList.remove('selected');
-            },
-
-            highlightEdge(element) {
-                element.classList.add('selected');
-            },
-
-            unhighlightEdge(element) {
+            unhighlightElement(element) {
                 element.classList.remove('selected');
             },
 
             updateSelectionCounter() {
-                const nodeCount = this.selectedNodes.length;
-                const edgeCount = this.selectedEdges.length;
-                const totalCount = nodeCount + edgeCount;
-                if (totalCount > 0) {
-                    let text = '';
-                    if (nodeCount > 0 && edgeCount > 0) {
-                        text = `${nodeCount} node${nodeCount !== 1 ? 's' : ''}, ${edgeCount} edge${edgeCount !== 1 ? 's' : ''} selected`;
-                    } else if (nodeCount > 0) {
-                        text = `${nodeCount} node${nodeCount !== 1 ? 's' : ''} selected`;
-                    } else {
-                        text = `${edgeCount} edge${edgeCount !== 1 ? 's' : ''} selected`;
-                    }
-                    selectionCounter.textContent = text;
+                const count = this.selectedElements.length;
+                if (count > 0) {
+                    selectionCounter.textContent = `${count} element${count !== 1 ? 's' : ''} selected`;
                     selectionCounter.style.display = 'inline';
                 } else {
                     selectionCounter.style.display = 'none';
@@ -751,7 +682,7 @@
                     const svgWidth = selectionRect.width / zoom;
                     const svgHeight = selectionRect.height / zoom;
 
-                    selectionState.selectNodesInRectangle({
+                    selectionState.selectElementsInRectangle({
                         x: svgX,
                         y: svgY,
                         width: svgWidth,
@@ -776,21 +707,14 @@
                         }
                         selectionState.isCreatingNode = false;
                         selectionState.reset();
-                    } else if (selectionState.selectedNodes.length > 0 || selectionState.selectedEdges.length > 0) {
-                        // Comment/action on selected nodes/edges
+                    } else if (selectionState.selectedElements.length > 0) {
+                        // Comment/action on selected elements
                         if (text) {
                             const entityRefs = [];
                             // Format: {uid}:{lineNumber+1} (1-indexed line number)
-                            if (selectionState.selectedNodes.length > 0) {
-                                selectionState.selectedNodes.forEach(n => {
-                                    entityRefs.push(`${n.uid}:${n.lineNumber + 1}`);
-                                });
-                            }
-                            if (selectionState.selectedEdges.length > 0) {
-                                selectionState.selectedEdges.forEach(e => {
-                                    entityRefs.push(`${e.uid}:${e.lineNumber + 1}`);
-                                });
-                            }
+                            selectionState.selectedElements.forEach(e => {
+                                entityRefs.push(`${e.uid}:${e.lineNumber + 1}`);
+                            });
                             selectionState.addJourney(`<About Entities(${entityRefs.join(', ')})>:${text}`);
                         }
                         selectionState.reset();
@@ -804,7 +728,7 @@
 
             // Show input when user starts typing while nodes/edges are selected
             document.addEventListener('keydown', (e) => {
-                if ((selectionState.selectedNodes.length > 0 || selectionState.selectedEdges.length > 0) && !selectionState.isCreatingNode &&
+                if (selectionState.selectedElements.length > 0 && !selectionState.isCreatingNode &&
                     !e.ctrlKey && !e.metaKey && !e.altKey) {
                     // Show input if it's a printable character
                     const isPrintable = e.key.length === 1 &&
@@ -1044,13 +968,16 @@
         }
 
         function viewSource() {
-            // Close the preview webview to view source in the editor
-            vscode.postMessage({ type: 'closePreview' });
+            // Switch to viewing the source file in the editor
+            vscode.postMessage({ type: 'viewSource' });
         }
 
         function setupClickHandlers(svg) {
-            // Click handler for entities (nodes) - toggle selection
-            svg.querySelectorAll('g.entity').forEach(g => {
+            // Click handler for all <g> elements - toggle selection
+            const allGroups = svg.querySelectorAll('g');
+            console.log('[Selection] Setting up click handlers for', allGroups.length, 'elements');
+
+            allGroups.forEach(g => {
                 g.addEventListener('click', (e) => {
                     if (isPanning) {
                         return;
@@ -1072,45 +999,10 @@
                     }
 
                     e.stopPropagation();
-                    selectionState.toggleNodeSelection(g);
+                    selectionState.toggleSelection(g);
                 });
             });
-
-            // Click handler for edges (links) - toggle selection
-            // To debug webview console: Help > Toggle Developer Tools > Console tab
-            console.log('[Edge Selection] Setting up click handlers for edges');
-            const links = svg.querySelectorAll('g.link');
-            console.log('[Edge Selection] Found', links.length, 'link elements');
-            links.forEach((link, index) => {
-                console.log(`[Edge Selection] Setting up handler for link ${index}:`, {
-                    entity1: link.dataset.entity1,
-                    entity2: link.dataset.entity2,
-                    id: link.id,
-                    className: link.className
-                });
-                link.addEventListener('click', (e) => {
-                    console.log('[Edge Selection] Link clicked!', {
-                        entity1: link.dataset.entity1,
-                        entity2: link.dataset.entity2,
-                        isPanning,
-                        shiftKey: e.shiftKey
-                    });
-                    if (isPanning) {
-                        console.log('[Edge Selection] Ignoring click - panning');
-                        return;
-                    }
-
-                    // Don't toggle if shift key (used for rectangle selection)
-                    if (e.shiftKey) {
-                        console.log('[Edge Selection] Ignoring click - shift key pressed');
-                        return;
-                    }
-
-                    e.stopPropagation();
-                    selectionState.toggleEdgeSelection(link);
-                });
-            });
-            console.log('[Edge Selection] Finished setting up click handlers');
+            console.log('[Selection] Finished setting up click handlers');
         }
     </script>
 </body>
