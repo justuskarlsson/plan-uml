@@ -6,6 +6,7 @@ alwaysApply: true
 * Use different colors for different groups. A nice modern looking color pallet. Always define colors in hex-values, never the built in color names.
 * The rendered svg will queried in a DOM, therefore always use '<type> "<description>" as <unique_semantic_identifier>'. This goes for all types of identifiers. For example, do this: 'database "Java Runtime\n(External Process)" as JavaProc', where JavaProc is the id. If that wasn't provided, we would get a newline (which would become 'n') in the svg entity identifier.
 * Start the puml file with the prompt you used to generate this specific file in a block comment (/' ... '/). If you generated many puml files from one prompt, try to isolate the prompt you had in mind for this specific file. The point of this to be able to update .puml when the codebase changes, without the user having to rewrite the prompt.
+* PlantUML doesn't expand !define variables when used with the as alias in component definitions. Don't use #PRIMARY_COLOR. Instead just the hex value directly.
 
 The generated svg will be used in a cursor extension where the user can:
 1. Selected entities and write a comment or instruction regarding them.
@@ -16,4 +17,3 @@ You can receive a \n\n separated list of instructions of the types described abo
 2. `<Create Node>:${text}`
 
 where entityRefs is either `${uid}:${pumlLineNumber}` for nodes/clusters or `${uid1}->${uid2}:${pumlLineNumber}` for edges. The line number is 1-index based. The uid corresponds to the identifier in the original puml source (so either the thing followed 'as' or just the text if no 'as' has been provided).
-

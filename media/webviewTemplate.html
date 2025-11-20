@@ -370,6 +370,7 @@
         let panStartY = 0;
         let panStartPanX = 0;
         let panStartPanY = 0;
+        let hasPanned = false; // Track if mouse moved during pan operation
 
         const previewContainer = document.getElementById('previewContainer');
         const sourceContainer = document.getElementById('sourceContainer');
@@ -610,7 +611,7 @@
 
             // Setup CTRL+CLICK for creating node
             previewContainer.addEventListener('click', (e) => {
-                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !isPanning) {
+                if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !isPanning && !hasPanned) {
                     e.preventDefault();
                     e.stopPropagation();
                     selectionState.isCreatingNode = true;
@@ -783,6 +784,7 @@
             previewContainer.addEventListener('mousedown', (e) => {
                 if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                     isPanning = true;
+                    hasPanned = false;
                     panStartX = e.clientX;
                     panStartY = e.clientY;
                     panStartPanX = panX;
@@ -794,6 +796,12 @@
 
             document.addEventListener('mousemove', (e) => {
                 if (isPanning) {
+                    const deltaX = Math.abs(e.clientX - panStartX);
+                    const deltaY = Math.abs(e.clientY - panStartY);
+                    // Consider it a pan if mouse moved more than 3 pixels
+                    if (deltaX > 3 || deltaY > 3) {
+                        hasPanned = true;
+                    }
                     panX = panStartPanX + (e.clientX - panStartX);
                     panY = panStartPanY + (e.clientY - panStartY);
                     updateTransform();
@@ -804,6 +812,13 @@
                 if (isPanning) {
                     isPanning = false;
                     previewContainer.classList.remove('panning');
+                    // Reset hasPanned after click events have been processed
+                    // Use requestAnimationFrame to ensure click handlers run first
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            hasPanned = false;
+                        });
+                    });
                 }
             });
 
@@ -979,7 +994,8 @@
 
             allGroups.forEach(g => {
                 g.addEventListener('click', (e) => {
-                    if (isPanning) {
+                    // Don't select if we were panning/dragging
+                    if (isPanning || hasPanned) {
                         return;
                     }
 
