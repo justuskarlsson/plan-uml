@@ -4,6 +4,9 @@ import * as fs from 'fs/promises';
 import { PlantUMLPreviewProvider } from './previewProvider';
 import { PlantUMLRenderer } from './plantumlRenderer';
 
+// Export provider instance for commands
+export { PlantUMLPreviewProvider };
+
 export async function activate(context: vscode.ExtensionContext) {
     console.log('PlantUML Preview extension is now active');
 
@@ -70,6 +73,38 @@ export async function activate(context: vscode.ExtensionContext) {
         }
     });
     context.subscriptions.push(openPreviewCommand);
+
+    // Register command to close all previews
+    const closePreviewCommand = vscode.commands.registerCommand('plantuml.closePreview', () => {
+        const provider = PlantUMLPreviewProvider.getInstance();
+        if (provider) {
+            const count = provider.closeAllPreviews();
+            if (count > 0) {
+                vscode.window.showInformationMessage(`Closed ${count} preview${count !== 1 ? 's' : ''}`);
+            } else {
+                vscode.window.showInformationMessage('No previews are currently open');
+            }
+        } else {
+            vscode.window.showWarningMessage('Preview provider not available');
+        }
+    });
+    context.subscriptions.push(closePreviewCommand);
+
+    // Register command to reload all webviews
+    const reloadWebviewsCommand = vscode.commands.registerCommand('plantuml.reloadWebviews', async () => {
+        const provider = PlantUMLPreviewProvider.getInstance();
+        if (provider) {
+            const count = await provider.reloadAllPreviews();
+            if (count > 0) {
+                vscode.window.showInformationMessage(`Reloaded ${count} preview${count !== 1 ? 's' : ''}`);
+            } else {
+                vscode.window.showInformationMessage('No active previews to reload');
+            }
+        } else {
+            vscode.window.showWarningMessage('Preview provider not available');
+        }
+    });
+    context.subscriptions.push(reloadWebviewsCommand);
 }
 
 export function deactivate() {

@@ -5,6 +5,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import * as https from 'https';
 import * as fsSync from 'fs';
+import * as crypto from 'crypto';
 
 const exec = promisify(child_process.exec);
 
@@ -16,6 +17,39 @@ export interface RenderResult {
 export class PlantUMLRenderer {
     private static readonly JAR_URL = 'https://github.com/justuskarlsson/plan-uml/releases/download/plantuml-1.2025.10/plantuml-1.2025.10.jar';
     private static readonly JAR_FILENAME = 'plantuml-1.2025.10.jar';
+
+    /**
+     * Compute SHA256 hash of file content and return first 12 characters
+     */
+    private static computeFileHash(content: string): string {
+        const hash = crypto.createHash('sha256').update(content).digest('hex');
+        return hash.substring(0, 12);
+    }
+
+    /**
+     * Clean up old cached SVG files for a given basename
+     */
+    private static async cleanupOldCacheFiles(outputDir: string, inputBasename: string, currentHash: string): Promise<void> {
+        try {
+            const files = await fs.readdir(outputDir);
+            const pattern = new RegExp(`^${inputBasename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\.([a-f0-9]{12})\\.svg$`);
+
+            for (const file of files) {
+                const match = file.match(pattern);
+                if (match && match[1] !== currentHash) {
+                    const filePath = path.join(outputDir, file);
+                    try {
+                        await fs.unlink(filePath);
+                        console.log(`[PlantUML Renderer] Cleaned up old cache file: ${file}`);
+                    } catch (unlinkError) {
+                        console.warn(`[PlantUML Renderer] Failed to delete old cache file ${file}:`, unlinkError);
+                    }
+                }
+            }
+        } catch (error) {
+            console.warn('[PlantUML Renderer] Failed to cleanup old cache files:', error);
+        }
+    }
 
     /**
      * Download the PlantUML JAR file from GitHub releases
@@ -224,6 +258,27 @@ export class PlantUMLRenderer {
                 console.log('[PlantUML Renderer] Output directory already exists or error:', error.message);
             }
 
+            console.log('[PlantUML Renderer] Step 5.5: Computing file hash and checking cache...');
+            // Read file content and compute hash
+            const fileContent = await fs.readFile(inputFile, 'utf-8');
+            const fileHash = this.computeFileHash(fileContent);
+            console.log('[PlantUML Renderer] File hash:', fileHash);
+
+            // Check if cached SVG exists
+            const cachedSvgPath = path.join(outputDir, `${inputBasename}.${fileHash}.svg`);
+            try {
+                const cachedSvg = await fs.readFile(cachedSvgPath, 'utf-8');
+                if (cachedSvg && cachedSvg.trim().length > 0) {
+                    console.log('[PlantUML Renderer] Cache hit! Using cached SVG file');
+                    return {
+                        svg: cachedSvg
+                    };
+                }
+            } catch (cacheError) {
+                // Cache miss or file doesn't exist, continue with rendering
+                console.log('[PlantUML Renderer] Cache miss, will render new SVG');
+            }
+
             console.log('[PlantUML Renderer] Step 6: Building command...');
             // Execute PlantUML: java -jar plantuml-1.2025.10.jar arch.puml -tsvg -o out/
             // Use relative path for input file when running from inputDir
@@ -258,9 +313,9 @@ export class PlantUMLRenderer {
                 console.log('[PlantUML Renderer] Error stderr:', stderr);
             }
 
-            // PlantUML outputs the SVG file to outputDir/inputBasename.svg
-            const outputSvgPath = path.join(outputDir, `${inputBasename}.svg`);
-            console.log('[PlantUML Renderer] Step 8: Expected output SVG path:', outputSvgPath);
+            // PlantUML outputs the SVG file to outputDir/inputBasename.svg (temporary name)
+            const tempSvgPath = path.join(outputDir, `${inputBasename}.svg`);
+            console.log('[PlantUML Renderer] Step 8: Expected temporary output SVG path:', tempSvgPath);
 
             try {
                 console.log('[PlantUML Renderer] Step 9: Waiting for file write...');
@@ -268,7 +323,7 @@ export class PlantUMLRenderer {
                 await new Promise(resolve => setTimeout(resolve, 100));
 
                 console.log('[PlantUML Renderer] Step 10: Reading SVG file...');
-                const svgContent = await fs.readFile(outputSvgPath, 'utf-8');
+                const svgContent = await fs.readFile(tempSvgPath, 'utf-8');
                 console.log('[PlantUML Renderer] SVG file read successfully, size:', svgContent.length, 'bytes');
 
                 if (!svgContent || svgContent.trim().length === 0) {
@@ -278,6 +333,25 @@ export class PlantUMLRenderer {
                         error: stderr || stdout || 'Generated SVG file is empty'
                     };
                 }
+
+                // Move/rename to cached filename with hash
+                const cachedSvgPath = path.join(outputDir, `${inputBasename}.${fileHash}.svg`);
+                try {
+                    await fs.rename(tempSvgPath, cachedSvgPath);
+                    console.log('[PlantUML Renderer] SVG file renamed to cached path:', cachedSvgPath);
+                } catch (renameError) {
+                    // If rename fails, try copy then delete
+                    try {
+                        await fs.copyFile(tempSvgPath, cachedSvgPath);
+                        await fs.unlink(tempSvgPath);
+                        console.log('[PlantUML Renderer] SVG file copied to cached path:', cachedSvgPath);
+                    } catch (copyError) {
+                        console.warn('[PlantUML Renderer] Failed to rename/copy to cached path, using temp file:', copyError);
+                    }
+                }
+
+                // Clean up old cached files
+                await this.cleanupOldCacheFiles(outputDir, inputBasename, fileHash);
 
                 console.log('[PlantUML Renderer] Render completed successfully');
                 return {
@@ -301,7 +375,7 @@ export class PlantUMLRenderer {
                 const errorDetails = [];
                 if (stderr) errorDetails.push(`stderr: ${stderr}`);
                 if (stdout) errorDetails.push(`stdout: ${stdout}`);
-                errorDetails.push(`Expected output: ${outputSvgPath}`);
+                errorDetails.push(`Expected output: ${tempSvgPath}`);
                 errorDetails.push(`Command: ${command}`);
 
                 return {

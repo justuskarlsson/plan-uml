@@ -70,8 +70,8 @@ UC_Cmd  --> [PlantUMLPreviewProvider\npreviewProvider.ts] : open preview
 [PlantUMLPreviewProvider\npreviewProvider.ts] --> Webview : update HTML/SVG\n(with interactive features)
 Webview --> [PlantUMLPreviewProvider\npreviewProvider.ts] : postMessage()\n(copyJourneysToClipboard, reload, error)
 
-UC_Click --> Webview : click entity
-UC_Select --> Webview : select entities
+UC_Click --> Webview : click entity/edge
+UC_Select --> Webview : select entities/edges
 UC_Journey --> Webview : create journey entry
 
 VSCodeAPI --> [PlantUMLPreviewProvider\npreviewProvider.ts] : onDidChangeTextDocument
@@ -95,13 +95,9 @@ rectangle "PlantUMLRenderer API" #FFF9C4 {
 rectangle "LineMapper API" #FFCDD2 {
   () "mapNodesToLines()" as mapNodes
   () "mapEdgesToLines()" as mapEdges
-  () "getEntityLine()" as getEntityLine
-  () "getEdgeLine()" as getEdgeLine
 
   [LineMapper\nlineMapper.ts] ..> mapNodes
   [LineMapper\nlineMapper.ts] ..> mapEdges
-  [LineMapper\nlineMapper.ts] ..> getEntityLine
-  [LineMapper\nlineMapper.ts] ..> getEdgeLine
 }
 
 rectangle "PreviewProvider API" #E8F5E9 {
@@ -119,7 +115,7 @@ rectangle "PreviewProvider API" #E8F5E9 {
 note right of Webview
   Interactive Features:
   - Zoom & Pan
-  - Entity Selection
+  - Entity & Edge Selection
   - Journey Tracking
   - Source Code View Toggle
 end note

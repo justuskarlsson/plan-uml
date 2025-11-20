@@ -46,6 +46,16 @@
         "command": "plantuml.openPreview",
         "title": "Open PlantUML Preview",
         "category": "PlantUML"
+      },
+      {
+        "command": "plantuml.closePreview",
+        "title": "Close All Previews",
+        "category": "PlantUML"
+      },
+      {
+        "command": "plantuml.reloadWebviews",
+        "title": "Reload All Previews",
+        "category": "PlantUML"
       }
     ],
     "customEditors": [
