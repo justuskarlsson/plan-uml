@@ -1,0 +1,10 @@
+---
+alwaysApply: true
+---
+
+* Never have a name after "@startuml". This could create problems with the render output not having same basename as the puml diagram. Just do "@startuml" and then new line.
+* Use different colors for different groups. A nice modern looking color pallet. Always define colors in hex-values, never the built in color names.
+* The rendered svg will queried in a DOM, therefore always use '<type> "<description>" as <unique_semantic_identifier>'. This goes for all types of identifiers. For example, do this: 'database "Java Runtime\n(External Process)" as JavaProc', where JavaProc is the id. If that wasn't provided, we would get a newline (which would become 'n') in the svg entity identifier.
+* Start the puml file with the prompt you used to generate this specific file in a block comment (/' ... '/). If you generated many puml files from one prompt, try to isolate the prompt you had in mind for this specific file. The point of this to be able to update .puml when the codebase changes, without the user having to rewrite the prompt.
+
+

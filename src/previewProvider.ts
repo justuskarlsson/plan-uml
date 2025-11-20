@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
 import { PlantUMLRenderer } from './plantumlRenderer';
-import { LineMapper, NodeMapping, EdgeMapping } from './lineMapper';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
@@ -110,10 +109,6 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         // Render PlantUML to SVG (pass extension context)
         const renderResult = await PlantUMLRenderer.renderFile(document.uri, this.context);
 
-        // Get entity and edge mappings
-        const entityMapping = await LineMapper.mapNodesToLines(document.uri);
-        const edgeMapping = await LineMapper.mapEdgesToLines(document.uri);
-
         if (renderResult.error) {
             webviewPanel.webview.html = this.getErrorHtml(renderResult.error, webviewPanel.webview);
             return;
@@ -122,8 +117,6 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
         // Update webview content
         webviewPanel.webview.html = await this.getWebviewContent(
             renderResult.svg,
-            entityMapping,
-            edgeMapping,
             document.getText(),
             webviewPanel.webview
         );
@@ -154,27 +147,21 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
     private replaceTemplateTokens(
         template: string,
         svg: string,
-        entityMapping: NodeMapping,
-        edgeMapping: EdgeMapping,
         sourceCode: string
     ): string {
         const escapedSource = this.escapeHtml(sourceCode);
         return template
             .replace(/\$\$\$___SVG___\$\$\$/g, svg)
-            .replace(/\$\$\$___ENTITY_MAPPING___\$\$\$/g, JSON.stringify(entityMapping))
-            .replace(/\$\$\$___EDGE_MAPPING___\$\$\$/g, JSON.stringify(edgeMapping))
             .replace(/\$\$\$___SOURCE_CODE___\$\$\$/g, escapedSource);
     }
 
     private async getWebviewContent(
         svg: string,
-        entityMapping: NodeMapping,
-        edgeMapping: EdgeMapping,
         sourceCode: string,
         webview: vscode.Webview
     ): Promise<string> {
         const template = await this.loadWebviewTemplate();
-        return this.replaceTemplateTokens(template, svg, entityMapping, edgeMapping, sourceCode);
+        return this.replaceTemplateTokens(template, svg, sourceCode);
     }
 
     private getErrorHtml(error: string, webview: vscode.Webview): string {

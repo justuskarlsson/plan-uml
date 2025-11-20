@@ -352,8 +352,6 @@
     </div>
     <script>
         const vscode = acquireVsCodeApi();
-        const entityMapping = $$$___ENTITY_MAPPING___$$$;
-        const edgeMapping = $$$___EDGE_MAPPING___$$$;
 
         // View state
         let viewMode = 'preview'; // 'preview' or 'source'
@@ -390,16 +388,51 @@
 
         // Selection-based state management
         const selectionState = {
-            selectedNodes: [], // Array of {name, element}
-            selectedEdges: [], // Array of {edgeKey, element}
+            selectedNodes: [], // Array of {uid, lineNumber, element}
+            selectedEdges: [], // Array of {uid, lineNumber, element}
             isCreatingNode: false,
             isRectangleSelecting: false,
             rectangleStart: { x: 0, y: 0 },
             rectangleCurrent: { x: 0, y: 0 },
             journeys: [],
 
-            toggleNodeSelection(nodeName, nodeElement) {
-                const index = this.selectedNodes.findIndex(n => n.name === nodeName);
+            // Helper function to determine uid for an element
+            getUidForElement(element) {
+                const sourceLine = element.dataset.sourceLine;
+                const lineNumber = sourceLine !== undefined ? parseInt(sourceLine, 10) : null;
+
+                // For nodes: use data-entity if exists, else fallback to _{lineNumber}_
+                const entity = element.dataset.entity;
+                if (entity) {
+                    return entity;
+                }
+
+                // For edges: construct from data-entity-1 and data-entity-2 if both exist
+                const entity1 = element.dataset.entity1;
+                const entity2 = element.dataset.entity2;
+                if (entity1 && entity2) {
+                    return `${entity1}->${entity2}`;
+                }
+
+                // Fallback: use line number as uid
+                if (lineNumber !== null) {
+                    return `_${lineNumber}_`;
+                }
+
+                // Last resort: use element id or empty string
+                return element.id || '';
+            },
+
+            toggleNodeSelection(nodeElement) {
+                const sourceLine = nodeElement.dataset.sourceLine;
+                if (sourceLine === undefined) {
+                    console.warn('[Selection] Missing sourceLine for node:', nodeElement);
+                    return;
+                }
+
+                const lineNumber = parseInt(sourceLine, 10);
+                const uid = this.getUidForElement(nodeElement);
+                const index = this.selectedNodes.findIndex(n => n.uid === uid && n.lineNumber === lineNumber);
                 if (index >= 0) {
                     // Deselect
                     this.unhighlightNode(this.selectedNodes[index].element);
@@ -407,26 +440,37 @@
                 } else {
                     // Select
                     this.highlightNode(nodeElement);
-                    this.selectedNodes.push({ name: nodeName, element: nodeElement });
+                    this.selectedNodes.push({ uid: uid, lineNumber: lineNumber, element: nodeElement });
                 }
                 this.updateSelectionCounter();
             },
 
-            toggleEdgeSelection(edgeKey, edgeElement) {
-                console.log('[Edge Selection] toggleEdgeSelection called', { edgeKey, edgeElement });
-                const index = this.selectedEdges.findIndex(e => e.edgeKey === edgeKey);
+            toggleEdgeSelection(edgeElement) {
+                const sourceLine = edgeElement.dataset.sourceLine;
+                console.log('[Edge Selection] toggleEdgeSelection called', { edgeElement, sourceLine });
+
+                if (sourceLine === undefined) {
+                    console.warn('[Edge Selection] Missing sourceLine for edge:', edgeElement);
+                    return;
+                }
+
+                const lineNumber = parseInt(sourceLine, 10);
+                const uid = this.getUidForElement(edgeElement);
+                console.log('[Edge Selection] Determined uid:', uid);
+
+                const index = this.selectedEdges.findIndex(e => e.uid === uid && e.lineNumber === lineNumber);
                 if (index >= 0) {
                     // Deselect
-                    console.log('[Edge Selection] Deselecting edge:', edgeKey);
+                    console.log('[Edge Selection] Deselecting edge:', uid);
                     this.unhighlightEdge(this.selectedEdges[index].element);
                     this.selectedEdges.splice(index, 1);
                 } else {
                     // Select
-                    console.log('[Edge Selection] Selecting edge:', edgeKey);
+                    console.log('[Edge Selection] Selecting edge:', uid);
                     this.highlightEdge(edgeElement);
-                    this.selectedEdges.push({ edgeKey: edgeKey, element: edgeElement });
+                    this.selectedEdges.push({ uid: uid, lineNumber: lineNumber, element: edgeElement });
                 }
-                console.log('[Edge Selection] Current selectedEdges:', this.selectedEdges.map(e => e.edgeKey));
+                console.log('[Edge Selection] Current selectedEdges:', this.selectedEdges.map(e => `${e.uid}:${e.lineNumber + 1}`));
                 this.updateSelectionCounter();
             },
 
@@ -456,9 +500,11 @@
                         width: bbox.width,
                         height: bbox.height
                     })) {
-                        const entityName = entity.dataset.entity;
-                        if (entityName) {
-                            selectedNodes.push({ name: entityName, element: entity });
+                        const sourceLine = entity.dataset.sourceLine;
+                        if (sourceLine !== undefined) {
+                            const lineNumber = parseInt(sourceLine, 10);
+                            const uid = selectionState.getUidForElement(entity);
+                            selectedNodes.push({ uid: uid, lineNumber: lineNumber, element: entity });
                         }
                     }
                 });
@@ -478,13 +524,13 @@
                             width: bbox.width,
                             height: bbox.height
                         })) {
-                            const entity1 = link.dataset.entity1;
-                            const entity2 = link.dataset.entity2;
-                            console.log('[Edge Selection] Rectangle: checking link', { entity1, entity2, bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height } });
-                            if (entity1 && entity2) {
-                                const edgeKey = `${entity1}->${entity2}`;
-                                selectedEdges.push({ edgeKey: edgeKey, element: link });
-                                console.log('[Edge Selection] Rectangle: selected edge', edgeKey);
+                            const sourceLine = link.dataset.sourceLine;
+                            console.log('[Edge Selection] Rectangle: checking link', { sourceLine, bbox: { x: bbox.x, y: bbox.y, width: bbox.width, height: bbox.height } });
+                            if (sourceLine !== undefined) {
+                                const lineNumber = parseInt(sourceLine, 10);
+                                const uid = selectionState.getUidForElement(link);
+                                selectedEdges.push({ uid: uid, lineNumber: lineNumber, element: link });
+                                console.log('[Edge Selection] Rectangle: selected edge', `${uid}:${lineNumber + 1}`);
                             }
                         }
                     } catch (e) {
@@ -599,7 +645,7 @@
                 if (this.journeys.length === 0) {
                     return;
                 }
-                const text = this.journeys.join('\n');
+                const text = this.journeys.join('\n\n');
                 vscode.postMessage({ type: 'copyJourneysToClipboard', text });
             }
         };
@@ -733,16 +779,19 @@
                     } else if (selectionState.selectedNodes.length > 0 || selectionState.selectedEdges.length > 0) {
                         // Comment/action on selected nodes/edges
                         if (text) {
-                            const parts = [];
+                            const entityRefs = [];
+                            // Format: {uid}:{lineNumber+1} (1-indexed line number)
                             if (selectionState.selectedNodes.length > 0) {
-                                const nodeNames = selectionState.selectedNodes.map(n => n.name).join(', ');
-                                parts.push(`nodes: ${nodeNames}`);
+                                selectionState.selectedNodes.forEach(n => {
+                                    entityRefs.push(`${n.uid}:${n.lineNumber + 1}`);
+                                });
                             }
                             if (selectionState.selectedEdges.length > 0) {
-                                const edgeKeys = selectionState.selectedEdges.map(e => e.edgeKey).join(', ');
-                                parts.push(`edges: ${edgeKeys}`);
+                                selectionState.selectedEdges.forEach(e => {
+                                    entityRefs.push(`${e.uid}:${e.lineNumber + 1}`);
+                                });
                             }
-                            selectionState.addJourney(`${text}\n(${parts.join(', ')})`);
+                            selectionState.addJourney(`<About Entities(${entityRefs.join(', ')})>:${text}`);
                         }
                         selectionState.reset();
                     }
@@ -1023,11 +1072,7 @@
                     }
 
                     e.stopPropagation();
-                    const entityName = g.dataset.entity;
-
-                    if (entityName) {
-                        selectionState.toggleNodeSelection(entityName, g);
-                    }
+                    selectionState.toggleNodeSelection(g);
                 });
             });
 
@@ -1062,17 +1107,7 @@
                     }
 
                     e.stopPropagation();
-                    const entity1 = link.dataset.entity1;
-                    const entity2 = link.dataset.entity2;
-
-                    console.log('[Edge Selection] Extracted attributes:', { entity1, entity2 });
-                    if (entity1 && entity2) {
-                        const edgeKey = `${entity1}->${entity2}`;
-                        console.log('[Edge Selection] Calling toggleEdgeSelection with edgeKey:', edgeKey);
-                        selectionState.toggleEdgeSelection(edgeKey, link);
-                    } else {
-                        console.warn('[Edge Selection] Missing entity1 or entity2 attributes:', { entity1, entity2 });
-                    }
+                    selectionState.toggleEdgeSelection(link);
                 });
             });
             console.log('[Edge Selection] Finished setting up click handlers');

@@ -1,0 +1,103 @@
+@startuml
+skinparam componentStyle rectangle
+skinparam packageStyle rectangle
+skinparam shadowing false
+
+' Color scheme
+skinparam component {
+  BackgroundColor<<Renderer>> #FFF9C4
+  BackgroundColor<<Mapper>> #FFCDD2
+  BackgroundColor<<Preview>> #E8F5E9
+  BackgroundColor<<Webview>> #E1F5FE
+}
+
+' --- Flow 1: PUML to SVG ---
+package "Step 1: PUML → SVG Rendering" {
+  file "ExtensionArchitecture.puml" as PUMLFile
+  component [PlantUMLRenderer\nplantumlRenderer.ts] <<Renderer>> as Renderer
+  database "Java Runtime\n(External Process)" as JavaProc
+  database "PlantUML JAR\nplantuml-1.2025.10.jar" as PlantUMLJar
+  file "ExtensionArchitecture.svg\n(with data-entity attributes)" as SVGFile
+}
+
+PUMLFile --> Renderer : renderFile(uri)
+Renderer --> JavaProc : exec("java -jar plantuml.jar file.puml -tsvg")
+JavaProc --> PlantUMLJar : loads JAR
+JavaProc --> SVGFile : generates SVG\nwith data-entity attributes
+Renderer --> SVGFile : reads SVG content
+
+note right of SVGFile
+  PlantUML automatically adds:
+  - data-entity="EntityName" on g.entity
+  - data-entity-1="Source" on g.link
+  - data-entity-2="Target" on g.link
+  - data-source-line="N" (optional)
+end note
+
+' --- Flow 2: PUML to Mapping ---
+package "Step 2: PUML → Line Mapping" {
+  component [LineMapper\nlineMapper.ts] <<Mapper>> as Mapper
+  database "NodeMapping\n{entityId: [lineNumbers]}" as NodeMapping
+  database "EdgeMapping\n{edgeKey: [lineNumbers]}" as EdgeMapping
+}
+
+PUMLFile --> Mapper : mapNodesToLines(uri)\nmapEdgesToLines(uri)
+Mapper --> NodeMapping : parses PUML file\nfinds entity definitions
+Mapper --> EdgeMapping : parses PUML file\nfinds edge definitions
+
+note right of Mapper
+  Parses PUML syntax:
+  - [Component] → entity
+  - actor User → entity
+  - A --> B → edge
+  Maps to line numbers
+end note
+
+' --- Flow 3: Combine and Send to Webview ---
+package "Step 3: Combine & Display" {
+  component [PlantUMLPreviewProvider\npreviewProvider.ts] <<Preview>> as PreviewProvider
+  component "Webview HTML\nwebviewTemplate.html" <<Webview>> as Webview
+}
+
+SVGFile --> PreviewProvider : SVG string
+NodeMapping --> PreviewProvider : entityMapping JSON
+EdgeMapping --> PreviewProvider : edgeMapping JSON
+PUMLFile --> PreviewProvider : sourceCode string
+
+PreviewProvider --> Webview : getWebviewContent()\nreplaces template tokens
+
+note right of PreviewProvider
+  Template tokens replaced:
+  - $$$___SVG___$$$ → SVG content
+  - $$$___ENTITY_MAPPING___$$$ → JSON mapping
+  - $$$___EDGE_MAPPING___$$$ → JSON mapping
+  - $$$___SOURCE_CODE___$$$ → escaped PUML source
+end note
+
+' --- Flow 4: User Interaction Loop ---
+package "Step 4: User Click → Source Navigation" {
+  actor User
+  component "JavaScript\nin Webview" as JS
+  database "entityMapping\nedgeMapping\n(in memory)" as Mappings
+}
+
+User --> Webview : clicks SVG element\ng.entity or g.link
+Webview --> JS : click event handler
+JS --> JS : extract data-entity\nor data-entity-1/2
+JS --> Mappings : lookup entity/edge ID\nin mapping object
+Mappings --> JS : returns line numbers
+JS --> PreviewProvider : postMessage({type: 'selectLine', line})
+PreviewProvider --> PUMLFile : showTextDocument()\nrevealRange(line)
+
+note right of JS
+  For entities:
+  const entityName = element.dataset.entity;
+  const lines = entityMapping[entityName];
+  
+  For edges:
+  const edgeKey = `${entity1}->${entity2}`;
+  const lines = edgeMapping[edgeKey];
+end note
+
+@enduml
+

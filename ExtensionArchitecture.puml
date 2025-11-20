@@ -18,7 +18,6 @@ package "VS Code Extension Host" {
 
   [PlantUMLPreviewProvider\npreviewProvider.ts] <<Preview>>
   [PlantUMLRenderer\nplantumlRenderer.ts] <<Renderer>>
-  [LineMapper\nlineMapper.ts] <<Mapper>>
 
   interface "VS Code API\n(Workspace, Commands)" as VSCodeAPI
   interface "Webview Panel\n(HTML/SVG Display)" as Webview
@@ -56,16 +55,12 @@ UC_Open --> [PlantUMLPreviewProvider\npreviewProvider.ts] : resolveCustomTextEdi
 UC_Cmd  --> [PlantUMLPreviewProvider\npreviewProvider.ts] : open preview
 
 [PlantUMLPreviewProvider\npreviewProvider.ts] --> [PlantUMLRenderer\nplantumlRenderer.ts] : renderFile()
-[PlantUMLPreviewProvider\npreviewProvider.ts] --> [LineMapper\nlineMapper.ts] : mapNodesToLines()\nmapEdgesToLines()
 
 [PlantUMLRenderer\nplantumlRenderer.ts] --> JavaProc : exec("java -jar plantuml.jar")
 [PlantUMLRenderer\nplantumlRenderer.ts] --> PlantUMLJar : findJarFile()\n(check multiple locations)
 [PlantUMLRenderer\nplantumlRenderer.ts] --> VSCodeAPI : checkJavaAvailable()
 
-[LineMapper\nlineMapper.ts] --> VSCodeAPI : openTextDocument()\n(parse .puml file)
-
 [PlantUMLRenderer\nplantumlRenderer.ts] --> [PlantUMLPreviewProvider\npreviewProvider.ts] : RenderResult { svg, error? }
-[LineMapper\nlineMapper.ts] --> [PlantUMLPreviewProvider\npreviewProvider.ts] : NodeMapping\nEdgeMapping
 
 [PlantUMLPreviewProvider\npreviewProvider.ts] --> Webview : update HTML/SVG\n(with interactive features)
 Webview --> [PlantUMLPreviewProvider\npreviewProvider.ts] : postMessage()\n(copyJourneysToClipboard, reload, error)
@@ -92,14 +87,6 @@ rectangle "PlantUMLRenderer API" #FFF9C4 {
   [PlantUMLRenderer\nplantumlRenderer.ts] ..> renderToSvg
 }
 
-rectangle "LineMapper API" #FFCDD2 {
-  () "mapNodesToLines()" as mapNodes
-  () "mapEdgesToLines()" as mapEdges
-
-  [LineMapper\nlineMapper.ts] ..> mapNodes
-  [LineMapper\nlineMapper.ts] ..> mapEdges
-}
-
 rectangle "PreviewProvider API" #E8F5E9 {
   () "resolveCustomTextEditor()" as resolveEditor
   () "updatePreview()" as updatePreview
@@ -118,6 +105,7 @@ note right of Webview
   - Entity & Edge Selection
   - Journey Tracking
   - Source Code View Toggle
+  - Reads data-uid & data-source-line\n  directly from SVG elements
 end note
 
 note right of PlantUMLJar

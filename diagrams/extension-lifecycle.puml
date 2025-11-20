@@ -1,0 +1,146 @@
+@startuml
+skinparam sequenceArrowThickness 2
+skinparam participant {
+  BackgroundColor #E8F5E9
+}
+skinparam actor {
+  BackgroundColor #BBDEFB
+}
+
+actor User
+participant "extension.ts\n(Activation)" as Extension #BBDEFB
+participant "PlantUMLPreviewProvider\npreviewProvider.ts" as PreviewProvider #E8F5E9
+participant "PlantUMLRenderer\nplantumlRenderer.ts" as Renderer #FFF9C4
+participant "LineMapper\nlineMapper.ts" as Mapper #FFCDD2
+participant "VS Code API" as VSCodeAPI #F1F1F1
+participant "File System" as FileSystem #F1F1F1
+participant "Webview Panel" as Webview #E1F5FE
+participant "Java Runtime" as JavaProc #F1F1F1
+participant "PlantUML JAR" as PlantUMLJar #F1F1F1
+
+== Activation Phase ==
+
+User -> VSCodeAPI : VS Code starts
+VSCodeAPI -> Extension : activate(context)
+
+Extension -> FileSystem : check if JAR exists\nin globalStorage
+alt JAR not found
+  Extension -> Renderer : downloadJarFile(url, path)
+  Renderer -> FileSystem : download from GitHub\nsave to globalStorage
+  Extension -> User : show progress notification
+end
+
+Extension -> VSCodeAPI : registerCustomEditorProvider\n('plantuml.preview', provider)
+Extension -> VSCodeAPI : registerCommand\n('plantuml.openPreview')
+Extension -> VSCodeAPI : registerCommand\n('plantuml.closePreview')
+Extension -> VSCodeAPI : registerCommand\n('plantuml.reloadWebviews')
+
+note right of Extension
+  Extension is now active
+  All providers and commands registered
+end note
+
+== User Opens Preview ==
+
+alt User opens .puml file
+  User -> VSCodeAPI : open .puml file
+  VSCodeAPI -> PreviewProvider : resolveCustomTextEditor\n(document, webviewPanel)
+else User runs command
+  User -> VSCodeAPI : execute 'plantuml.openPreview'
+  VSCodeAPI -> PreviewProvider : resolveCustomTextEditor\n(document, webviewPanel)
+end
+
+PreviewProvider -> PreviewProvider : updatePreview(document, panel)
+
+== Preview Rendering Phase ==
+
+PreviewProvider -> Renderer : renderFile(uri, context)
+Renderer -> JavaProc : checkJavaAvailable()
+alt Java not available
+  Renderer --> PreviewProvider : RenderResult { error }
+  PreviewProvider -> Webview : show error HTML
+else Java available
+  Renderer -> FileSystem : findJarFile()\n(check multiple locations)
+  alt JAR not found
+    Renderer --> PreviewProvider : RenderResult { error }
+    PreviewProvider -> Webview : show error HTML
+  else JAR found
+    Renderer -> FileSystem : read file content\ncompute hash
+    alt cached SVG exists
+      Renderer -> FileSystem : read cached SVG
+      Renderer --> PreviewProvider : RenderResult { svg }
+    else no cache
+      Renderer -> JavaProc : exec("java -jar plantuml.jar file.puml -tsvg")
+      JavaProc -> PlantUMLJar : loads JAR
+      JavaProc -> FileSystem : generates SVG file
+      Renderer -> FileSystem : read SVG file\nsave as cached version
+      Renderer --> PreviewProvider : RenderResult { svg }
+    end
+  end
+end
+
+PreviewProvider -> Mapper : mapNodesToLines(uri)
+Mapper -> VSCodeAPI : openTextDocument(uri)
+VSCodeAPI -> FileSystem : read .puml file
+FileSystem --> Mapper : file content
+Mapper -> Mapper : parse PUML syntax\nfind entities/edges
+Mapper --> PreviewProvider : NodeMapping
+
+PreviewProvider -> Mapper : mapEdgesToLines(uri)
+Mapper -> VSCodeAPI : openTextDocument(uri)
+VSCodeAPI -> FileSystem : read .puml file
+FileSystem --> Mapper : file content
+Mapper -> Mapper : parse PUML syntax\nfind edges
+Mapper --> PreviewProvider : EdgeMapping
+
+PreviewProvider -> PreviewProvider : getWebviewContent()\nload template\nreplace tokens
+PreviewProvider -> Webview : set HTML content\n(SVG + mappings + source)
+
+== Runtime Phase ==
+
+loop File Changes
+  User -> FileSystem : edit .puml file
+  FileSystem -> VSCodeAPI : onDidChangeTextDocument
+  VSCodeAPI -> PreviewProvider : updatePreview(document, panel)
+  PreviewProvider -> Renderer : renderFile()\n(checks cache first)
+  PreviewProvider -> Mapper : mapNodesToLines()\nmapEdgesToLines()
+  PreviewProvider -> Webview : update HTML
+end
+
+loop File System Changes
+  FileSystem -> VSCodeAPI : onDidChange (FileSystemWatcher)
+  VSCodeAPI -> PreviewProvider : updatePreview(document, panel)
+  PreviewProvider -> Renderer : renderFile()
+  PreviewProvider -> Webview : update HTML
+end
+
+loop User Interactions
+  User -> Webview : click entity/edge
+  Webview -> PreviewProvider : postMessage({type: 'selectLine'})
+  PreviewProvider -> VSCodeAPI : showTextDocument()\nrevealRange(line)
+  
+  User -> Webview : reload button
+  Webview -> PreviewProvider : postMessage({type: 'reload'})
+  PreviewProvider -> PreviewProvider : updatePreview()
+  
+  User -> Webview : copy journeys
+  Webview -> PreviewProvider : postMessage({type: 'copyJourneysToClipboard'})
+  PreviewProvider -> VSCodeAPI : clipboard.writeText()
+end
+
+== Deactivation Phase ==
+
+User -> VSCodeAPI : VS Code shuts down
+VSCodeAPI -> Extension : deactivate()
+Extension -> Extension : cleanup (if needed)
+
+note right of Extension
+  VS Code automatically disposes:
+  - Registered providers
+  - Command subscriptions
+  - File system watchers
+  - Webview panels
+end note
+
+@enduml
+
