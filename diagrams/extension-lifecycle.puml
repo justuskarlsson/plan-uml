@@ -30,10 +30,10 @@ alt JAR not found
   Extension -> User : show progress notification
 end
 
-Extension -> VSCodeAPI : registerCustomEditorProvider\n('plantuml.preview', provider)
-Extension -> VSCodeAPI : registerCommand\n('plantuml.openPreview')
-Extension -> VSCodeAPI : registerCommand\n('plantuml.closePreview')
-Extension -> VSCodeAPI : registerCommand\n('plantuml.reloadWebviews')
+Extension -> VSCodeAPI : registerCustomEditorProvider\n('planuml.preview', provider)
+Extension -> VSCodeAPI : registerCommand\n('planuml.openPreview')
+Extension -> VSCodeAPI : registerCommand\n('planuml.closePreview')
+Extension -> VSCodeAPI : registerCommand\n('planuml.reloadWebviews')
 
 note right of Extension
   Extension is now active
@@ -46,7 +46,7 @@ alt User opens .puml file
   User -> VSCodeAPI : open .puml file
   VSCodeAPI -> PreviewProvider : resolveCustomTextEditor\n(document, webviewPanel)
 else User runs command
-  User -> VSCodeAPI : execute 'plantuml.openPreview'
+  User -> VSCodeAPI : execute 'planuml.openPreview'
   VSCodeAPI -> PreviewProvider : resolveCustomTextEditor\n(document, webviewPanel)
 end
 

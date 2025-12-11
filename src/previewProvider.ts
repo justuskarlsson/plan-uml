@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as fsPromises from 'fs/promises';
 
 export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider {
-    private static readonly viewType = 'plantuml.preview';
+    private static readonly viewType = 'planuml.preview';
     private webviewPanels = new Map<vscode.WebviewPanel, vscode.TextDocument>();
     private templateCache: string | null = null;
     private static instance: PlantUMLPreviewProvider | null = null;
@@ -93,7 +93,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
                     await this.updatePreview(document, webviewPanel);
                     break;
                 case 'error':
-                    vscode.window.showErrorMessage(`PlantUML Preview: ${message.message}`);
+                    vscode.window.showErrorMessage(`Plan UML Preview: ${message.message}`);
                     break;
                 case 'viewSource':
                     // Switch to viewing the source file in the editor
@@ -176,7 +176,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PlantUML Preview - Error</title>
+    <title>Plan UML Preview - Error</title>
     <style>
         body {
             margin: 0;
@@ -194,7 +194,7 @@ export class PlantUMLPreviewProvider implements vscode.CustomTextEditorProvider 
 </head>
 <body>
     <div class="error">
-        <h2>PlantUML Rendering Error</h2>
+        <h2>Plan UML Rendering Error</h2>
         <p>${this.escapeHtml(error)}</p>
         <p><strong>Tip:</strong> Make sure Java is installed and the PlantUML JAR file (plantuml-1.2025.10.jar) is available in your workspace root.</p>
     </div>

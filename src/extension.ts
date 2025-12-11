@@ -52,7 +52,7 @@ export async function activate(context: vscode.ExtensionContext) {
     // Register custom editor provider
     const provider = new PlantUMLPreviewProvider(context);
     const registration = vscode.window.registerCustomEditorProvider(
-        'plantuml.preview',
+        'planuml.preview',
         provider,
         {
             webviewOptions: {
@@ -64,10 +64,10 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(registration);
 
     // Register command to open preview
-    const openPreviewCommand = vscode.commands.registerCommand('plantuml.openPreview', async () => {
+    const openPreviewCommand = vscode.commands.registerCommand('planuml.openPreview', async () => {
         const activeEditor = vscode.window.activeTextEditor;
         if (activeEditor && activeEditor.document.fileName.endsWith('.puml')) {
-            await vscode.commands.executeCommand('vscode.openWith', activeEditor.document.uri, 'plantuml.preview');
+            await vscode.commands.executeCommand('vscode.openWith', activeEditor.document.uri, 'planuml.preview');
         } else {
             vscode.window.showWarningMessage('Please open a .puml file first');
         }
@@ -75,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(openPreviewCommand);
 
     // Register command to close all previews
-    const closePreviewCommand = vscode.commands.registerCommand('plantuml.closePreview', () => {
+    const closePreviewCommand = vscode.commands.registerCommand('planuml.closePreview', () => {
         const provider = PlantUMLPreviewProvider.getInstance();
         if (provider) {
             const count = provider.closeAllPreviews();
@@ -91,7 +91,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(closePreviewCommand);
 
     // Register command to reload all webviews
-    const reloadWebviewsCommand = vscode.commands.registerCommand('plantuml.reloadWebviews', async () => {
+    const reloadWebviewsCommand = vscode.commands.registerCommand('planuml.reloadWebviews', async () => {
         const provider = PlantUMLPreviewProvider.getInstance();
         if (provider) {
             const count = await provider.reloadAllPreviews();
@@ -107,7 +107,7 @@ export async function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(reloadWebviewsCommand);
 
     // Register command to write cursor rules to workspace
-    const writeCursorRulesCommand = vscode.commands.registerCommand('plantuml.writeCursorRules', async () => {
+    const writeCursorRulesCommand = vscode.commands.registerCommand('planuml.writeCursorRules', async () => {
         try {
             // Get the cursor rules file from extension resources
             const rulesUri = vscode.Uri.joinPath(context.extensionUri, 'resources', 'plan-uml.mdc');

@@ -2,7 +2,7 @@
   "name": "plan-uml",
   "displayName": "Plan UML",
   "description": "Interactive preview for PlantUML (.puml) files with click-to-select navigation, zoom controls, and entity mapping",
-  "version": "0.0.5",
+  "version": "0.0.8",
   "publisher": "justuskarlsson",
   "license": "MIT",
   "repository": {
@@ -43,30 +43,30 @@
     ],
     "commands": [
       {
-        "command": "plantuml.openPreview",
-        "title": "Open PlantUML Preview",
-        "category": "PlantUML"
+        "command": "planuml.openPreview",
+        "title": "Open Plan UML Preview",
+        "category": "Plan UML"
       },
       {
-        "command": "plantuml.closePreview",
+        "command": "planuml.closePreview",
         "title": "Close All Previews",
-        "category": "PlantUML"
+        "category": "Plan UML"
       },
       {
-        "command": "plantuml.reloadWebviews",
+        "command": "planuml.reloadWebviews",
         "title": "Reload All Previews",
-        "category": "PlantUML"
+        "category": "Plan UML"
       },
       {
-        "command": "plantuml.writeCursorRules",
+        "command": "planuml.writeCursorRules",
         "title": "Write plan-uml cursor rules",
-        "category": "PlantUML"
+        "category": "Plan UML"
       }
     ],
     "customEditors": [
       {
-        "viewType": "plantuml.preview",
-        "displayName": "PlantUML Preview",
+        "viewType": "planuml.preview",
+        "displayName": "Plan UML Preview",
         "selector": [
           {
             "filenamePattern": "*.puml"
