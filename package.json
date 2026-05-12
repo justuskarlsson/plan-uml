@@ -2,7 +2,7 @@
   "name": "plan-uml",
   "displayName": "Plan UML",
   "description": "Interactive preview for PlantUML (.puml) files with click-to-select navigation, zoom controls, and entity mapping",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "publisher": "justuskarlsson",
   "license": "MIT",
   "repository": {
@@ -26,6 +26,7 @@
     "Visualization",
     "Other"
   ],
+  "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
     "languages": [

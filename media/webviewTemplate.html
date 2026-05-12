@@ -62,8 +62,13 @@
             flex: 1;
             overflow: hidden;
             position: relative;
+            margin-right: 0;
+            /* Sidebar is collapsed by default; JS adds margin when open */
+            transition: margin-right 0.2s ease;
+        }
+
+        .content-area.journey-open {
             margin-right: 300px;
-            /* Account for journey sidebar */
         }
 
         .preview-container {
@@ -154,6 +159,18 @@
             flex-direction: column;
             z-index: 1000;
             overflow: hidden;
+            transition: transform 0.2s ease, opacity 0.2s ease;
+        }
+
+        .journey-sidebar.collapsed {
+            transform: translateX(300px);
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        #toggleJourney.journey-open {
+            background-color: var(--vscode-button-secondaryBackground);
+            color: var(--vscode-button-secondaryForeground);
         }
 
         .journey-header {
@@ -332,6 +349,8 @@
         <span id="zoomLevel" style="padding: 0 8px; font-size: 12px;">100%</span>
         <span id="selectionCounter" style="padding: 0 8px; font-size: 12px; display: none;"></span>
         <button id="reloadButton" title="Reload SVG">Reload</button>
+        <div class="separator"></div>
+        <button id="toggleJourney" title="Show Journeys sidebar">Journeys</button>
     </div>
     <div class="content-area">
         <div class="preview-container active" id="previewContainer">
@@ -392,7 +411,34 @@
         const resetButton = document.getElementById('resetButton');
         const selectionCounter = document.getElementById('selectionCounter');
         const reloadButton = document.getElementById('reloadButton');
+        const toggleJourneyBtn = document.getElementById('toggleJourney');
         const rectangleSelection = document.getElementById('rectangleSelection');
+
+        // Journey sidebar toggle
+        let journeySidebarOpen = false;
+
+        function setJourneySidebarOpen(open) {
+            journeySidebarOpen = open;
+            const contentArea = document.querySelector('.content-area');
+            if (open) {
+                journeySidebar.classList.remove('collapsed');
+                contentArea.classList.remove('journey-hidden');
+                contentArea.classList.add('journey-open');
+                toggleJourneyBtn.classList.add('journey-open');
+                toggleJourneyBtn.title = 'Hide Journeys sidebar';
+            } else {
+                journeySidebar.classList.add('collapsed');
+                contentArea.classList.add('journey-hidden');
+                contentArea.classList.remove('journey-open');
+                toggleJourneyBtn.classList.remove('journey-open');
+                toggleJourneyBtn.title = 'Show Journeys sidebar';
+            }
+        }
+
+        // Start collapsed — sidebar hidden by default
+        setJourneySidebarOpen(false);
+
+        toggleJourneyBtn.addEventListener('click', () => setJourneySidebarOpen(!journeySidebarOpen));
 
         // Selection-based state management
         const selectionState = {
