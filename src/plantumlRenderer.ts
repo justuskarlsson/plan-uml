@@ -6,6 +6,7 @@ import * as fs from 'fs/promises';
 import * as https from 'https';
 import * as fsSync from 'fs';
 import * as crypto from 'crypto';
+import { resolveSvgOutputPaths } from './svgOutputResolver';
 
 const exec = promisify(child_process.exec);
 
@@ -313,9 +314,12 @@ export class PlantUMLRenderer {
                 console.log('[PlantUML Renderer] Error stderr:', stderr);
             }
 
-            // PlantUML outputs the SVG file to outputDir/inputBasename.svg (temporary name)
-            const tempSvgPath = path.join(outputDir, `${inputBasename}.svg`);
-            console.log('[PlantUML Renderer] Step 8: Expected temporary output SVG path:', tempSvgPath);
+            // PlantUML names the output after the diagram when @startuml <name> is used,
+            // and after the input file when the diagram is unnamed - try both.
+            const svgCandidates = resolveSvgOutputPaths(fileContent, outputDir, inputBasename);
+            let tempSvgPath = svgCandidates[svgCandidates.length - 1];
+            let svgContent = '';
+            console.log('[PlantUML Renderer] Step 8: Candidate output SVG paths:', svgCandidates);
 
             try {
                 console.log('[PlantUML Renderer] Step 9: Waiting for file write...');
@@ -323,15 +327,22 @@ export class PlantUMLRenderer {
                 await new Promise(resolve => setTimeout(resolve, 100));
 
                 console.log('[PlantUML Renderer] Step 10: Reading SVG file...');
-                const svgContent = await fs.readFile(tempSvgPath, 'utf-8');
+                for (const candidate of svgCandidates) {
+                    try {
+                        const content = await fs.readFile(candidate, 'utf-8');
+                        if (content && content.trim().length > 0) {
+                            tempSvgPath = candidate;
+                            svgContent = content;
+                            break;
+                        }
+                    } catch {
+                        // Try the next candidate filename
+                    }
+                }
                 console.log('[PlantUML Renderer] SVG file read successfully, size:', svgContent.length, 'bytes');
 
                 if (!svgContent || svgContent.trim().length === 0) {
-                    console.error('[PlantUML Renderer] SVG file is empty');
-                    return {
-                        svg: '',
-                        error: stderr || stdout || 'Generated SVG file is empty'
-                    };
+                    throw new Error('No candidate SVG file was generated');
                 }
 
                 // Move/rename to cached filename with hash
@@ -375,7 +386,7 @@ export class PlantUMLRenderer {
                 const errorDetails = [];
                 if (stderr) errorDetails.push(`stderr: ${stderr}`);
                 if (stdout) errorDetails.push(`stdout: ${stdout}`);
-                errorDetails.push(`Expected output: ${tempSvgPath}`);
+                errorDetails.push(`Expected output (tried): ${svgCandidates.join(' | ')}`);
                 errorDetails.push(`Command: ${command}`);
 
                 return {
