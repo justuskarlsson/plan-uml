@@ -80,6 +80,7 @@
     "vscode:prepublish": "npm run compile && npm run copy-resources",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test test/*.test.mjs",
     "copy-resources": "node -e \"require('fs').mkdirSync('resources', {recursive: true}); require('fs').copyFileSync('.cursor/rules/plan-uml.mdc', 'resources/plan-uml.mdc')\""
   },
   "devDependencies": {
